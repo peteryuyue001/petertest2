@@ -65,7 +65,10 @@ def compute_metrics(
         }
 
     # ---- 基础指标 ----
-    total_return = (equity_curve.iloc[-1] / equity_curve.iloc[0]) - 1
+    # equity_curve 可能是 pd.Series，提取标量值
+    start_val = float(equity_curve.iloc[0]) if hasattr(equity_curve, 'iloc') else float(equity_curve[0])
+    end_val = float(equity_curve.iloc[-1]) if hasattr(equity_curve, 'iloc') else float(equity_curve[-1])
+    total_return = (end_val / start_val) - 1.0
     metrics["total_return"] = round(total_return, 6)
 
     total_days = len(equity_curve)
