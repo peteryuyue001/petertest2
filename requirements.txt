@@ -15,7 +15,7 @@ pandas>=2.0.0
 scipy>=1.10.0
 
 # --- LLM API ---
-openai>=1.0.0             # OpenAI 兼容客户端（用于 DeepSeek API）
+openai>=1.30.0            # OpenAI 兼容客户端（用于 DeepSeek API，需 >=1.30 避免 httpx proxies 不兼容）
 
 # --- 数据存储与图表 ---
 matplotlib>=3.7.0
