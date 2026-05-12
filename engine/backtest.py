@@ -53,29 +53,31 @@ def prepare_signal_matrix(
     """
     将信号 DataFrame 转换为 VectorBT 的信号矩阵
 
+    VectorBT 的 targetpercent 需要每天都有目标权重值。
+    我们在调仓日设置目标权重，然后用前向填充保持持仓。
+
     Args:
         signals: columns [code, weight, date]
         price_matrix: 价格矩阵 (rows=date, cols=code)
 
     Returns:
-        pd.DataFrame: 信号矩阵 (0=平仓, 1=持仓, NaN=不变)
+        pd.DataFrame: 调仓日权重矩阵（NaN=不变，VectorBT 会保持当前持仓）
     """
-    # 初始化全零信号矩阵
+    # 初始化 NaN 矩阵（NaN 表示无调仓动作，保持当前持仓）
     signal_matrix = pd.DataFrame(
-        0.0,
+        np.nan,
         index=price_matrix.index,
         columns=price_matrix.columns,
     )
 
-    # 按调仓日期填充
+    # 按调仓日期填充目标权重
     for _, row in signals.iterrows():
         code = row["code"]
         dt = row["date"]
         weight = row["weight"]
 
-        # 找到最近的交易日
+        # 找到最近的交易日（如果调仓日不在交易日历中）
         if dt not in signal_matrix.index:
-            # 找到 <= dt 的最近交易日
             valid_dates = signal_matrix.index[signal_matrix.index <= dt]
             if len(valid_dates) == 0:
                 continue
@@ -128,11 +130,13 @@ def run_backtest(
     # 按权重比例的买入信号
     print("📊 执行向量化回测...")
 
-    # 方法：使用 order 方式按权重配置
-    # 将 weight 转为目标持仓比例
+    # 使用 vbt.Portfolio.from_orders with targetpercent
+    # signal_matrix: NaN=保持持仓, 0.0~1.0=目标权重
+    # 将 signal_matrix 中的 NaN 替换为 0，VectorBT 在 targetpercent 模式下
+    # NaN 不会被当作订单，只有显式设置的权重才会触发调仓
     portfolio = vbt.Portfolio.from_orders(
         close=price_matrix,
-        size=signal_matrix,  # 这里用 weight 作为目标持仓比例
+        size=signal_matrix,
         size_type="targetpercent",
         init_cash=initial_capital,
         fees=commission,

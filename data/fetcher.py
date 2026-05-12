@@ -191,7 +191,30 @@ class DataFetcher:
             except Exception as e:
                 raise RuntimeError(f"获取基准指数失败: {e}")
 
-        df = df.rename(columns={"date": "date", "close": "close"})
+        # Akshare 返回中文列名，统一映射为英文
+        column_map = {
+            "date": "date",
+            "日期": "date",
+            "close": "close",
+            "收盘": "close",
+            "收盘价": "close",
+        }
+        # 只映射实际存在的列
+        actual_rename = {k: v for k, v in column_map.items() if k in df.columns}
+        df = df.rename(columns=actual_rename)
+
+        # 确保有 date 和 close 列
+        if "date" not in df.columns:
+            raise RuntimeError(f"基准数据中未找到日期列，可用列: {list(df.columns)}")
+        if "close" not in df.columns:
+            # 尝试找最可能的收盘价列
+            for col in df.columns:
+                if "收盘" in col or "close" in col.lower():
+                    df = df.rename(columns={col: "close"})
+                    break
+            else:
+                raise RuntimeError(f"基准数据中未找到收盘价列，可用列: {list(df.columns)}")
+
         df["date"] = pd.to_datetime(df["date"])
         df = df.sort_values("date")
 

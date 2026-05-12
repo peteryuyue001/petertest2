@@ -32,9 +32,18 @@ def load_config():
         return config
     except ImportError:
         print("⚠️  config.py 未找到，使用默认配置")
-        # 使用 config.example 的默认值
-        import config_example as config
-        return config
+        # 动态加载 config.example.py（文件名含点号，无法直接 import）
+        import importlib.util
+        example_path = PROJECT_ROOT / "config.example.py"
+        if example_path.exists():
+            spec = importlib.util.spec_from_file_location(
+                "config_example", str(example_path)
+            )
+            config_example = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(config_example)
+            return config_example
+        else:
+            raise FileNotFoundError("config.example.py 未找到！")
 
 
 # ============================================================
@@ -46,7 +55,7 @@ def step_fetch_data(cfg) -> Optional[object]:
     Step 1: 下载/更新 A股数据
     """
     print("\n" + "=" * 52)
-    print("  📊 Step 1: 下载/更新 A股数据")
+    print("  � Step 1: 下载/更新 A股数据")
     print("=" * 52)
 
     from data.fetcher import DataFetcher
@@ -446,6 +455,7 @@ def _get_next_version() -> int:
 
 def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
     """运行单个策略回测"""
+    import pandas as pd
     from data.fetcher import DataFetcher
     from engine.sandbox import execute_strategy, format_error_for_llm
     from engine.backtest import run_backtest_simple
@@ -527,8 +537,6 @@ def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
     # 计算指标
     equity = result.get("equity_curve", pd.Series(dtype=float))
     trades = result.get("trades")
-
-    import pandas as pd
 
     metrics = compute_metrics(
         equity_curve=equity,
