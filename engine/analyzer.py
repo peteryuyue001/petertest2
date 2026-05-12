@@ -48,6 +48,17 @@ def compute_metrics(
     """
     metrics = {}
 
+    # ---- 入口规范化: 确保 equity_curve 是 1D pd.Series ----
+    if isinstance(equity_curve, pd.DataFrame):
+        # VectorBT 可能返回多列 DataFrame，取均值压平
+        if equity_curve.shape[1] == 1:
+            equity_curve = equity_curve.iloc[:, 0]
+        else:
+            equity_curve = equity_curve.mean(axis=1)
+    # 确保是 Series 类型
+    if not isinstance(equity_curve, pd.Series):
+        equity_curve = pd.Series(equity_curve)
+
     if equity_curve.empty or len(equity_curve) < 2:
         return {
             "total_return": 0.0,
@@ -65,9 +76,8 @@ def compute_metrics(
         }
 
     # ---- 基础指标 ----
-    # equity_curve 可能是 pd.Series，提取标量值
-    start_val = float(equity_curve.iloc[0]) if hasattr(equity_curve, 'iloc') else float(equity_curve[0])
-    end_val = float(equity_curve.iloc[-1]) if hasattr(equity_curve, 'iloc') else float(equity_curve[-1])
+    start_val = float(equity_curve.iloc[0])
+    end_val = float(equity_curve.iloc[-1])
     total_return = (end_val / start_val) - 1.0
     metrics["total_return"] = round(total_return, 6)
 
@@ -84,14 +94,14 @@ def compute_metrics(
     daily_returns = equity_curve.pct_change().dropna()
 
     # ---- 年化波动率 ----
-    daily_vol = daily_returns.std()
+    daily_vol = float(daily_returns.std())
     annual_vol = daily_vol * np.sqrt(TRADING_DAYS_PER_YEAR)
-    metrics["annual_volatility"] = round(annual_vol, 6)
+    metrics["annual_volatility"] = round(float(annual_vol), 6)
 
     # ---- 最大回撤 ----
     cumulative_max = equity_curve.cummax()
     drawdown = (equity_curve - cumulative_max) / cumulative_max
-    max_dd = drawdown.min()
+    max_dd = float(drawdown.min())
     metrics["max_drawdown"] = round(max_dd, 6)
 
     # ---- 夏普比率 ----

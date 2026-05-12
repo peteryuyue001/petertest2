@@ -146,8 +146,14 @@ def run_backtest(
 
     # 提取结果
     equity_curve = portfolio.value()
+    # 如果 equity_curve 是 DataFrame，取均值整合为 Series
+    if isinstance(equity_curve, pd.DataFrame):
+        if equity_curve.shape[1] == 1:
+            equity_curve = equity_curve.iloc[:, 0]
+        else:
+            equity_curve = equity_curve.mean(axis=1)
     trades = portfolio.trades.records_readable
-    stats = portfolio.stats()
+    stats = portfolio.stats(agg_func=np.mean) if hasattr(portfolio, 'stats') else pd.Series()
 
     print(f"✅ 回测完成 — 总交易次数: {len(trades)}")
 
