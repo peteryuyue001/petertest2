@@ -64,6 +64,9 @@ textarea:focus,input:focus{border-color:var(--accent)}
 </head>
 <body>
 
+<div id="demoBanner" style="display:none;background:var(--yellow);color:#0d1117;text-align:center;padding:10px 16px;font-size:13px;font-weight:500">
+  ⚠️ GitHub Pages 演示模式 — 后端 API 未运行。请 <a href="https://github.com/peteryuyue001/petertest2" style="color:#0d1117;font-weight:700">克隆项目</a> 到本地启动完整功能（<code>uvicorn web.app:app</code>）
+</div>
 <div class="navbar">
   <div class="logo">🧬 Quant<span>Evolution</span></div>
   <nav>
@@ -166,6 +169,33 @@ textarea:focus,input:focus{border-color:var(--accent)}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 const API = '/api';
+let apiOnline = false;
+let showDemoBanner = true;
+
+// ── 检测 API 是否可用 ──
+async function checkAPI() {
+  try {
+    const r = await fetch(API + '/status');
+    apiOnline = r.ok;
+  } catch(e) { apiOnline = false; }
+  updateBanner();
+}
+
+function updateBanner() {
+  const banner = document.getElementById('demoBanner');
+  const cards = document.querySelectorAll('.api-required');
+  if (!apiOnline) {
+    if (banner) banner.style.display = 'block';
+    cards.forEach(c => c.classList.add('demo-mode'));
+  } else {
+    if (banner) banner.style.display = 'none';
+    cards.forEach(c => c.classList.remove('demo-mode'));
+  }
+}
+
+function showDemoAlert() {
+  alert('⚠️ 当前为 GitHub Pages 演示模式\n\n后端 API 未运行，请将项目克隆到本地启动：\n\n  cd quant_evolution\n  pip install -r requirements.txt\n  pip install -r web/requirements.txt\n  uvicorn web.app:app --port 8000\n\n然后访问 http://localhost:8000');
+}
 
 // ── 页面切换 ──
 document.querySelectorAll('.navbar nav button').forEach(btn => {
@@ -431,8 +461,11 @@ async function loadSystem() {
 }
 
 // ── 初始化 ──
-checkStatus();
-loadStrategies();
+checkAPI().then(() => {
+  checkStatus();
+  loadStrategies();
+  if (!apiOnline) document.getElementById('demoBanner').style.display = 'block';
+});
 </script>
 </body>
 </html>
