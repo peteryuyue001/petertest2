@@ -7,14 +7,11 @@
   - 输出权益曲线、交易记录
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     import vectorbt as vbt
@@ -153,7 +150,7 @@ def run_backtest(
         else:
             equity_curve = equity_curve.mean(axis=1)
     trades = portfolio.trades.records_readable
-    stats = portfolio.stats(agg_func=np.mean) if hasattr(portfolio, 'stats') else pd.Series()
+    stats = portfolio.stats() if hasattr(portfolio, 'stats') else pd.Series()
 
     print(f"✅ 回测完成 — 总交易次数: {len(trades)}")
 
@@ -177,7 +174,7 @@ def run_backtest_simple(
 
     用于处理 AI 生成的可能不太标准的信号。
     """
-    if signals.empty:
+    if signals is None or signals.empty:
         return {
             "error": "信号为空，无法回测",
             "equity_curve": pd.Series(dtype=float),
@@ -195,9 +192,27 @@ def run_backtest_simple(
             "stats": pd.Series(dtype=object),
         }
 
-    if "weight" not in signals.columns:
-        # 等权重
+    signals["weight"] = pd.to_numeric(signals.get("weight", 1.0), errors="coerce")
+    signals["date"] = pd.to_datetime(signals["date"], errors="coerce")
+    signals["code"] = signals["code"].astype(str).str.strip()
+    signals = signals.dropna(subset=["code", "date", "weight"])
+
+    if signals.empty:
+        return {
+            "error": "信号为空或不合法，无法回测",
+            "equity_curve": pd.Series(dtype=float),
+            "trades": pd.DataFrame(),
+            "stats": pd.Series(dtype=object),
+        }
+
+    if signals["weight"].isna().all():
         signals["weight"] = 1.0 / signals.groupby("date")["code"].transform("count")
+
+    signals = (
+        signals.groupby(["date", "code"], as_index=False)["weight"]
+        .mean()
+        .sort_values(["date", "weight"], ascending=[True, False])
+    )
 
     try:
         result = run_backtest(

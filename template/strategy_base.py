@@ -96,21 +96,22 @@ class BaseStrategy(ABC):
             )
 
         # 2. 类型转换
-        signals = signals.copy()
+        signals = signals.copy(deep=True)
         signals["code"] = signals["code"].astype(str).str.strip()
-        signals["weight"] = pd.to_numeric(
-            signals["weight"], errors="coerce"
-        )
-        signals["date"] = pd.to_datetime(signals["date"])
+        signals["weight"] = pd.to_numeric(signals["weight"], errors="coerce")
+        signals["date"] = pd.to_datetime(signals["date"], errors="coerce")
 
         # 3. 清理无效数据
         signals = signals.dropna(subset=["code", "weight", "date"])
         signals = signals[signals["weight"] > 0]
 
+        if signals.empty:
+            return pd.DataFrame(columns=["code", "weight", "date"])
+
         # 4. 权重归一化（保证总和 ≤ 1.0）
-        # 按日期分组
         normalized = []
         for dt, group in signals.groupby("date"):
+            group = group.copy()
             total = group["weight"].sum()
             if total > 1.0:
                 group["weight"] = group["weight"] / total
@@ -119,15 +120,12 @@ class BaseStrategy(ABC):
         signals = pd.concat(normalized, ignore_index=True)
 
         # 5. 应用单支持仓上限
-        signals["weight"] = signals["weight"].clip(
-            upper=self.MAX_SINGLE_WEIGHT
-        )
+        signals["weight"] = signals["weight"].clip(upper=self.MAX_SINGLE_WEIGHT)
 
         # 6. 限制持仓数量（取权重最高的前 N 支）
         limited = []
         for dt, group in signals.groupby("date"):
-            group = group.nlargest(self.MAX_STOCKS, "weight")
-            # 再次归一化
+            group = group.nlargest(self.MAX_STOCKS, "weight").copy()
             total = group["weight"].sum()
             if total > 1.0:
                 group["weight"] = group["weight"] / total

@@ -17,8 +17,6 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-
 
 class SandboxError(Exception):
     """沙箱执行错误"""

@@ -13,16 +13,14 @@
   5. 🔄 反馈改进 → 生成下一版策略
 """
 
-import os
-import sys
+import argparse
 import json
+import os
 import time
 from pathlib import Path
 from typing import Optional, Dict
 
-# 确保项目根目录在 sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent
-sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def load_config():
@@ -46,6 +44,20 @@ def load_config():
             raise FileNotFoundError("config.example.py 未找到！")
 
 
+def ensure_directories() -> None:
+    """Ensure core project directories exist."""
+    for path in [PROJECT_ROOT / "data" / "cache", PROJECT_ROOT / "strategy_pool", PROJECT_ROOT / "results"]:
+        path.mkdir(parents=True, exist_ok=True)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Quant Evolution 量化AI回测系统")
+    parser.add_argument("--step", type=int, choices=range(1, 8), help="运行指定步骤编号，默认进入交互式菜单")
+    parser.add_argument("--strategy", type=str, help="指定回测策略文件，例如 strategy_v1.py")
+    parser.add_argument("--all", action="store_true", help="顺序运行全部步骤 1-6")
+    return parser.parse_args()
+
+
 # ============================================================
 # 菜单操作函数
 # ============================================================
@@ -55,7 +67,7 @@ def step_fetch_data(cfg) -> Optional[object]:
     Step 1: 下载/更新 A股数据
     """
     print("\n" + "=" * 52)
-    print("  � Step 1: 下载/更新 A股数据")
+    print("  1️⃣ Step 1: 下载/更新 A股数据")
     print("=" * 52)
 
     from data.fetcher import DataFetcher
@@ -139,7 +151,7 @@ def step_generate_strategy(cfg) -> Optional[str]:
     return str(strategy_path)
 
 
-def step_run_backtest(cfg, fetcher=None) -> Optional[Dict]:
+def step_run_backtest(cfg, fetcher=None, strategy_choice: Optional[str] = None) -> Optional[Dict]:
     """
     Step 3: 运行回测
     """
@@ -147,7 +159,6 @@ def step_run_backtest(cfg, fetcher=None) -> Optional[Dict]:
     print("  🔬 Step 3: 运行回测")
     print("=" * 52)
 
-    # 列出可用策略
     pool_dir = PROJECT_ROOT / "strategy_pool"
     strategies = sorted(pool_dir.glob("strategy_v*.py"))
 
@@ -163,22 +174,27 @@ def step_run_backtest(cfg, fetcher=None) -> Optional[Dict]:
     print(f"  [A] 运行最新策略")
     print(f"  [B] 运行所有策略")
 
-    choice = input("\n📝 请选择 > ").strip().upper()
+    choice = strategy_choice
+    if choice is None:
+        choice = input("\n📝 请选择 > ").strip().upper()
+    else:
+        choice = choice.strip().upper()
+        print(f"\n📝 选择: {choice}")
 
     if choice == "B":
         return _run_all_backtests(cfg, fetcher, strategies)
-    else:
-        if choice == "A" or not choice:
-            target = strategies[-1]
-        else:
-            try:
-                idx = int(choice) - 1
-                target = strategies[idx]
-            except (ValueError, IndexError):
-                print("❌ 无效选择")
-                return None
 
-        return _run_single_backtest(cfg, fetcher, target)
+    if choice == "A" or not choice:
+        target = strategies[-1]
+    else:
+        try:
+            idx = int(choice) - 1
+            target = strategies[idx]
+        except (ValueError, IndexError):
+            print("❌ 无效选择")
+            return None
+
+    return _run_single_backtest(cfg, fetcher, target)
 
 
 def step_show_report(cfg) -> None:
@@ -362,9 +378,11 @@ def step_show_history(cfg) -> None:
     print("-" * 80)
 
     # 找最佳策略
-    best = max(results, key=lambda r: json.load(open(r)).get("sharpe_ratio", -999))
-    with open(best) as f:
-        best_m = json.load(f)
+    def _load_result(path):
+        with open(path) as f:
+            return json.load(f)
+    best = max(results, key=lambda r: _load_result(r).get("sharpe_ratio", -999))
+    best_m = _load_result(best)
     print(f"\n🏆 最佳策略: {best_m.get('strategy_name', best.stem)} (夏普: {best_m.get('sharpe_ratio', 0):.2f})")
 
 
@@ -634,13 +652,14 @@ def show_menu():
 
 def main():
     """主入口"""
-    # 切换到项目根目录
     os.chdir(PROJECT_ROOT)
+    ensure_directories()
+
+    args = parse_args()
 
     print(f"\n🚀 启动 Quant Evolution 系统...")
     print(f"   项目路径: {PROJECT_ROOT}")
 
-    # 加载配置
     try:
         cfg = load_config()
         print(f"   数据区间: {cfg.DATA_START_DATE} → {cfg.DATA_END_DATE}")
@@ -650,10 +669,41 @@ def main():
         print(f"   ⚠️ 配置加载警告: {e}")
         return
 
-    # 状态变量
     fetcher = None
 
-    # 主循环
+    if args.all:
+        for step in range(1, 7):
+            if step == 1:
+                fetcher = step_fetch_data(cfg)
+            elif step == 2:
+                step_generate_strategy(cfg)
+            elif step == 3:
+                step_run_backtest(cfg, fetcher, strategy_choice=args.strategy)
+            elif step == 4:
+                step_show_report(cfg)
+            elif step == 5:
+                step_evolve(cfg)
+            elif step == 6:
+                step_show_history(cfg)
+        return
+
+    if args.step is not None:
+        if args.step == 1:
+            step_fetch_data(cfg)
+        elif args.step == 2:
+            step_generate_strategy(cfg)
+        elif args.step == 3:
+            step_run_backtest(cfg, fetcher, strategy_choice=args.strategy)
+        elif args.step == 4:
+            step_show_report(cfg)
+        elif args.step == 5:
+            step_evolve(cfg)
+        elif args.step == 6:
+            step_show_history(cfg)
+        elif args.step == 7:
+            step_fix_code(cfg)
+        return
+
     while True:
         show_menu()
         choice = input("📝 请选择 [0-7] > ").strip()
@@ -678,7 +728,6 @@ def main():
         else:
             print("❌ 无效选择，请输入 0-7")
 
-        # 每步操作后暂停
         if choice != "0":
             input("\n⏎ 按回车键继续...")
 

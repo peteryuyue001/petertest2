@@ -2,111 +2,74 @@ import pandas as pd
 import numpy as np
 from template.strategy_base import BaseStrategy
 
-class MultiFactorStrategy(BaseStrategy):
+class HS300MultiFactorStrategy(BaseStrategy):
     name = "沪深300多因子选股策略"
-    version = 3
-    description = "基于小市值、反转、换手率、低波动四因子，加入真实沪深300指数择时，月度调仓，等权重持仓15支"
+    version = 1
+    description = "基于20日动量、波动率过滤、换手率因子的月度调仓策略，等权重持有20支股票"
 
     def generate_signals(self, data: pd.DataFrame) -> pd.DataFrame:
-        """
-        沪深300多因子选股策略 v3
-        因子：
-        1. 小市值因子：流通市值倒数（使用amount/turnover_rate近似）
-        2. 反转因子：过去20日收益率（反向）
-        3. 换手率因子：过去5日平均换手率（低换手率代表筹码稳定，取负值）
-        4. 低波动因子：过去20日收益率标准差（低波动优先，取负值）
-        5. 大盘择时：沪深300指数在20日均线之上（使用真实指数数据）
+        # ===== 数据预处理 =====
+        # 按股票代码和日期排序，确保时间序列正确
+        data = data.sort_values(['code', 'date']).reset_index(drop=True)
         
-        月度调仓，持仓15支，等权重
-        """
-        # 复制数据避免修改原始数据
-        df = data.copy()
+        # 确保date列为字符串类型
+        if data['date'].dtype != 'object':
+            data['date'] = data['date'].astype(str)
         
-        # 确保按日期和股票代码排序
-        df = df.sort_values(['date', 'code']).reset_index(drop=True)
+        # ===== 因子计算 =====
+        # 1. 20日动量因子（反转效应：过去涨幅过高的股票未来可能回调）
+        data['momentum_20'] = data.groupby('code')['close'].transform(lambda x: x / x.shift(20) - 1)
         
-        # 计算因子
-        # 1. 小市值因子：使用成交额/换手率近似流通市值
-        df['circulation_market_value'] = df['amount'] / (df['turnover_rate'] + 0.0001)  # 防止除零
-        # 市值倒数：市值越小，得分越高
-        df['market_value_inv'] = 1 / (df['circulation_market_value'] + 1e-8)
+        # 2. 波动率因子（20日波动率，用于过滤高波动股票）
+        data['volatility_20'] = data.groupby('code')['pct_change'].transform(lambda x: x.rolling(20).std())
         
-        # 2. 反转因子：过去20日收益率（负值越大，跌幅越大，取负号使其正向）
-        df['reversal_20d'] = df.groupby('code')['close'].transform(lambda x: x / x.shift(20) - 1)
-        df['reversal_score'] = -df['reversal_20d']  # 过去跌得多的得分高
+        # 3. 换手率因子（20日平均换手率，低换手率表示筹码稳定）
+        data['turnover_20'] = data.groupby('code')['turnover_rate'].transform(lambda x: x.rolling(20).mean())
         
-        # 3. 换手率因子：过去5日平均换手率（低换手率得分高）
-        df['avg_turnover_5d'] = df.groupby('code')['turnover_rate'].transform(lambda x: x.rolling(5).mean())
-        df['turnover_score'] = -df['avg_turnover_5d']  # 低换手率得分高
+        # ===== 因子处理 =====
+        # 过滤掉缺失值
+        data = data.dropna(subset=['momentum_20', 'volatility_20', 'turnover_20'])
         
-        # 4. 低波动因子：过去20日收益率标准差（低波动得分高）
-        df['volatility_20d'] = df.groupby('code')['pct_change'].transform(lambda x: x.rolling(20).std())
-        df['volatility_score'] = -df['volatility_20d']  # 低波动得分高
+        # 因子标准化（Z-score）
+        for factor in ['momentum_20', 'volatility_20', 'turnover_20']:
+            mean = data.groupby('date')[factor].transform('mean')
+            std = data.groupby('date')[factor].transform('std')
+            data[f'{factor}_zscore'] = (data[factor] - mean) / std.replace(0, np.nan)
         
-        # 5. 大盘择时：使用沪深300指数收盘价（从data中提取沪深300成分股，用所有股票的平均收盘价近似）
-        # 更准确的做法：使用市场指数，这里用沪深300成分股的平均收盘价作为指数代理
-        df['market_avg_close'] = df.groupby('date')['close'].transform('mean')
-        df['market_ma_20'] = df.groupby('date')['close'].transform('mean').rolling(20).mean()
-        df['market_timing_signal'] = (df['market_avg_close'] > df['market_ma_20']).astype(int)
+        # ===== 综合评分 =====
+        # 动量因子取负值（反转效应：过去跌得多的股票未来可能涨）
+        # 波动率因子取负值（低波动股票更稳定）
+        # 换手率因子取负值（低换手率代表筹码锁定）
+        data['score'] = -data['momentum_20_zscore'] - data['volatility_20_zscore'] - data['turnover_20_zscore']
         
-        # 剔除缺失值
-        df = df.dropna(subset=['market_value_inv', 'reversal_score', 'turnover_score', 'volatility_score', 'market_timing_signal'])
+        # ===== 选股逻辑 =====
+        # 使用字符串切片提取年月，避免.str访问器问题
+        data['year_month'] = data['date'].str[:7]
         
-        # 生成调仓日期：每月最后一个交易日
-        df['year'] = df['date'].dt.year
-        df['month'] = df['date'].dt.month
-        # 找到每月最后一个交易日
-        last_trading_days = df.groupby(['year', 'month'])['date'].transform('max')
-        df['is_rebalance_day'] = (df['date'] == last_trading_days)
+        # 标记每月最后一个交易日
+        data['month_end'] = data.groupby(['code', 'year_month'])['date'].transform('max')
+        data['is_month_end'] = data['date'] == data['month_end']
         
-        # 只保留调仓日数据
-        rebalance_days = df[df['is_rebalance_day']].copy()
+        # 只保留月末交易日的数据
+        month_end_data = data[data['is_month_end']].copy()
         
-        # 在每个调仓日进行选股
-        results = []
+        # 在每个月末，按评分排序选前20支股票
+        def select_stocks(group):
+            # 按评分降序排列
+            group = group.sort_values('score', ascending=False)
+            # 选前20支
+            selected = group.head(20)
+            # 等权重分配
+            selected['weight'] = 1.0 / len(selected)
+            return selected
         
-        for date, group in rebalance_days.groupby('date'):
-            # 大盘择时：如果市场处于空头（均线之下），则不进行任何交易
-            market_signal = group['market_timing_signal'].iloc[0]
-            if market_signal == 0:
-                continue  # 空仓
-            
-            # 因子标准化（z-score）
-            # 小市值因子：正向
-            group['z_market_value'] = (group['market_value_inv'] - group['market_value_inv'].mean()) / group['market_value_inv'].std()
-            
-            # 反转因子：正向（过去跌幅越大，得分越高）
-            group['z_reversal'] = (group['reversal_score'] - group['reversal_score'].mean()) / group['reversal_score'].std()
-            
-            # 换手率因子：正向（低换手率得分高）
-            group['z_turnover'] = (group['turnover_score'] - group['turnover_score'].mean()) / group['turnover_score'].std()
-            
-            # 低波动因子：正向（低波动得分高）
-            group['z_volatility'] = (group['volatility_score'] - group['volatility_score'].mean()) / group['volatility_score'].std()
-            
-            # 等权合成因子得分
-            group['total_score'] = (group['z_market_value'] + group['z_reversal'] + 
-                                   group['z_turnover'] + group['z_volatility'])
-            
-            # 按得分排序，选择前15支股票（提高集中度）
-            selected = group.nlargest(15, 'total_score')
-            
-            # 生成信号
-            if len(selected) > 0:
-                # 等权重
-                weight = 1.0 / len(selected)
-                for _, row in selected.iterrows():
-                    results.append({
-                        'code': row['code'],
-                        'weight': weight,
-                        'date': date
-                    })
+        selected = month_end_data.groupby('date', group_keys=False).apply(select_stocks)
         
-        # 如果没有选到任何股票，返回空DataFrame
-        if len(results) == 0:
-            return pd.DataFrame(columns=['code', 'weight', 'date'])
+        # ===== 生成信号 =====
+        # 构建返回结果
+        signals_df = selected[['code', 'weight', 'date']].reset_index(drop=True)
         
-        # 构建结果DataFrame
-        signals_df = pd.DataFrame(results)
+        # 确保权重在0~1之间
+        signals_df['weight'] = signals_df['weight'].clip(0, 0.2)  # 单支持仓不超过20%
         
         return signals_df

@@ -9,12 +9,10 @@ DeepSeek API 客户端 — LLM 交互层
 使用 OpenAI 兼容客户端连接 DeepSeek API。
 """
 
+import os
 import re
-import sys
 from pathlib import Path
 from typing import Optional, Tuple
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 try:
     from openai import OpenAI
@@ -253,8 +251,14 @@ class DeepSeekClient:
                     stream=False,
                 )
 
-                content = response.choices[0].message.content
-                return content, None
+                if hasattr(response, "choices") and response.choices:
+                    choice = response.choices[0]
+                    if hasattr(choice, "message") and hasattr(choice.message, "content"):
+                        return choice.message.content, None
+                    if isinstance(choice, dict):
+                        return choice.get("message", {}).get("content"), None
+
+                return None, "❌ LLM 返回格式不符合预期"
 
             except Exception as e:
                 error_msg = str(e)
@@ -360,17 +364,17 @@ def create_client_from_config() -> DeepSeekClient:
     except ImportError:
         pass
 
-    # 方式 2: 尝试从 .env 加载
+    # 方式 2: 尝试从 .env 或标准环境变量加载
     if api_key is None or api_key == "sk-your-api-key-here":
         try:
             from dotenv import load_dotenv
-            import os
             load_dotenv()
-            api_key = os.getenv("DEEPSEEK_API_KEY")
-            if api_key:
-                base_url = os.getenv("DEEPSEEK_BASE_URL", base_url)
         except ImportError:
             pass
+
+        api_key = api_key or os.getenv("DEEPSEEK_API_KEY") or os.getenv("OPENAI_API_KEY")
+        base_url = os.getenv("DEEPSEEK_BASE_URL", base_url)
+        model = os.getenv("DEEPSEEK_MODEL", model)
 
     if api_key is None or api_key in ("sk-your-api-key-here", ""):
         raise ValueError(

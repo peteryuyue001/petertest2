@@ -15,14 +15,11 @@
   - excess_return:     超额收益
 """
 
-import sys
 from pathlib import Path
 from typing import Dict, Optional
 
 import numpy as np
 import pandas as pd
-
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # 假设每年约 244 个交易日
 TRADING_DAYS_PER_YEAR = 244
@@ -82,7 +79,11 @@ def compute_metrics(
     metrics["total_return"] = round(total_return, 6)
 
     total_days = len(equity_curve)
-    years = total_days / TRADING_DAYS_PER_YEAR
+    if isinstance(equity_curve.index, pd.DatetimeIndex) and total_days > 1:
+        span_days = (equity_curve.index[-1] - equity_curve.index[0]).days or total_days
+        years = max(span_days / 365.25, total_days / TRADING_DAYS_PER_YEAR)
+    else:
+        years = total_days / TRADING_DAYS_PER_YEAR
 
     if years > 0 and total_return > -1:
         annual_return = (1 + total_return) ** (1 / years) - 1
@@ -178,6 +179,7 @@ def compute_metrics(
         metrics["win_rate"] = 0.0
         metrics["profit_factor"] = 0.0
 
+    metrics["total_trades"] = int(len(trades)) if trades is not None else 0
     metrics["total_days"] = total_days
     metrics["years"] = round(years, 2)
 
@@ -214,6 +216,7 @@ def format_metrics_report(
 ║  信息比率       │ {metrics.get('information_ratio', 0):>10.2f}               ║
 ║  胜率           │ {metrics.get('win_rate', 0)*100:>10.2f}%           ║
 ║  盈亏比         │ {metrics.get('profit_factor', 0):>10.2f}               ║
+║  交易次数       │ {metrics.get('total_trades', 0):>10d}               ║
 ║                                                  ║
 ║  回测区间       │ {metrics.get('total_days', 0)} 天 / {metrics.get('years', 0)} 年    ║
 ╚══════════════════════════════════════════════════╝
