@@ -74,6 +74,7 @@ textarea:focus,input:focus{border-color:var(--accent)}
     <button data-page="backtest">🔬 回测</button>
     <button data-page="evolve">🧠 AI进化</button>
     <button data-page="comparison">📈 对比</button>
+    <button data-page="builder">🔧 构建策略</button>
     <button data-page="system">⚙️ 系统</button>
   </nav>
   <div class="status" id="sysStatus"><div class="dot" id="statusDot"></div><span id="statusText">检查中...</span></div>
@@ -152,8 +153,97 @@ textarea:focus,input:focus{border-color:var(--accent)}
     </div>
   </div>
 
+  <div class="page" id="page-builder">
+    <div class="card">
+      <h3>🔧 策略构建器</h3>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:12px">人工选择因子、配置参数，自定义你的量化策略</p>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px">
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">策略名称</label>
+          <input type="text" id="bldName" value="自定义策略" placeholder="输入策略名称" style="width:100%">
+        </div>
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">策略描述（可选）</label>
+          <input type="text" id="bldDesc" placeholder="简要描述策略逻辑" style="width:100%">
+        </div>
+      </div>
+      <div id="builderFactors" style="display:grid;gap:8px;margin-bottom:16px">
+        <div style="text-align:center;padding:20px;color:var(--text2);font-size:13px">⏳ 正在加载因子列表...</div>
+      </div>
+      <div id="builderSelected" style="display:none;margin-bottom:16px">
+        <h4 style="font-size:13px;color:var(--text);margin-bottom:8px">✅ 已选因子配置</h4>
+        <div id="builderSelectedList" style="display:grid;gap:10px"></div>
+        <div id="weightSum" style="margin-top:8px;font-size:12px;color:var(--text2)">总权重: 0%</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:16px;padding-top:12px;border-top:1px solid var(--border)">
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">持仓数量</label>
+          <input type="number" id="bldHolding" value="15" min="5" max="50" style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px">
+          <span style="font-size:11px;color:var(--text2);margin-left:4px">支</span>
+        </div>
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">调仓频率</label>
+          <select id="bldFreq" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px">
+            <option value="monthly">月度</option>
+            <option value="weekly">每周</option>
+            <option value="daily">每日</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">大盘择时</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="bldTiming"> 启用
+            <input type="number" id="bldTimingMA" value="20" min="5" max="250" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:12px" disabled>
+            <span style="font-size:11px;color:var(--text2)">日均线</span>
+          </label>
+        </div>
+        <div>
+          <label style="display:block;margin-bottom:4px;color:var(--text2);font-size:12px">过滤次新股</label>
+          <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px">
+            <input type="checkbox" id="bldFilterNew" checked> 上市 &ge;
+            <input type="number" id="bldListedDays" value="60" min="0" max="365" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:4px 8px;color:var(--text);font-size:12px">
+            <span style="font-size:11px;color:var(--text2)">日</span>
+          </label>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="previewBuilderCode()">👁 预览代码</button>
+        <button class="btn btn-success" onclick="saveBuilderStrategy()">💾 保存策略</button>
+        <span id="bldStatus" style="align-self:center;color:var(--text2);font-size:13px"></span>
+      </div>
+    </div>
+    <div id="builderPreview" style="display:none"></div>
+  </div>
+
   <div class="page" id="page-system">
     <div class="card"><h3>⚙️ 系统状态</h3><div id="systemInfo" style="display:grid;gap:12px"></div></div>
+    <div class="card">
+      <h3>📊 数据管理</h3>
+      <div id="dataStatus" style="display:grid;gap:8px;margin-bottom:16px;font-size:13px">
+        <div style="text-align:center;padding:20px;color:var(--text2)">点击「检查数据」查看缓存状态</div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="checkDataStatus()">🔍 检查数据</button>
+        <select id="dataPoolSelect" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 12px;color:var(--text);font-size:13px">
+          <option value="hs300">沪深300</option>
+          <option value="csi500">中证500</option>
+          <option value="csi1000">中证1000</option>
+        </select>
+        <button class="btn btn-success" onclick="startDataFetch()">📥 下载/更新数据</button>
+      </div>
+      <div class="log-area" id="dataFetchLog" style="display:none"></div>
+    </div>
+    <div class="card">
+      <h3>🧬 自动进化</h3>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:12px">自动循环：回测 → AI 分析问题 → 改进策略 → 再回测</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <label style="font-size:13px;white-space:nowrap">进化轮数:</label>
+        <input type="number" id="evolveRounds" value="3" min="1" max="10" style="width:70px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px">
+        <button class="btn btn-primary" onclick="startAutoEvolve()">🧬 启动进化循环</button>
+        <span id="evolveStatus" style="color:var(--text2);font-size:13px"></span>
+      </div>
+      <div class="log-area" id="evolveLog" style="display:none"></div>
+    </div>
   </div>
 
 </div>
@@ -226,6 +316,7 @@ function loadPage(page) {
     case 'backtest': loadBacktestSelect(); break;
     case 'evolve': loadEvolveOptions(); break;
     case 'comparison': loadComparison(); break;
+    case 'builder': loadBuilder(); break;
     case 'system': loadSystem(); break;
   }
 }
@@ -458,6 +549,406 @@ async function loadSystem() {
       <div>股票池: <strong>${d.stock_pool}</strong></div><div>日期范围: <strong>${d.date_range}</strong></div>
       <div>初始资金: <strong>${(d.initial_capital||0).toLocaleString()} 元</strong></div><div>LLM: <span class="tag ${d.llm_available?'tag-ok':'tag-err'}">${d.llm_available?'可用':'未配置'}</span></div>
     </div></div>`;
+}
+
+// ============================================================
+// 策略构建器
+// ============================================================
+let builderFactors = [];
+let selectedFactors = {};  // { factorId: { id, name, weight, params: { key: val } } }
+
+async function loadBuilder() {
+  // 加载因子列表
+  try {
+    const r = await fetch(API + '/builder/factors');
+    const d = await r.json();
+    builderFactors = d.factors;
+    renderFactorChecklist();
+  } catch(e) {
+    document.getElementById('builderFactors').innerHTML = '<div style="text-align:center;padding:20px;color:var(--red);font-size:13px">❌ 加载因子失败，请检查 API 连接</div>';
+  }
+  updateSelectedPanel();
+}
+
+// 因子分类中文
+const factorCategories = {
+  'momentum': '📈 动量类',
+  'scale': '🏢 规模类',
+  'volatility': '📉 波动类',
+  'liquidity': '💧 流动性',
+  'value': '💰 估值类',
+};
+
+function renderFactorChecklist() {
+  const container = document.getElementById('builderFactors');
+  if (!builderFactors.length) {
+    container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text2)">暂无可用因子</div>';
+    return;
+  }
+  // 按分类分组
+  const groups = {};
+  builderFactors.forEach(f => {
+    if (!groups[f.category]) groups[f.category] = [];
+    groups[f.category].push(f);
+  });
+  let html = '';
+  for (const [cat, factors] of Object.entries(groups)) {
+    html += `<div style="margin-bottom:8px"><div style="font-size:12px;color:var(--text2);margin-bottom:4px;font-weight:600">${factorCategories[cat] || cat}</div>`;
+    html += '<div style="display:flex;flex-wrap:wrap;gap:6px">';
+    factors.forEach(f => {
+      const checked = selectedFactors[f.id] ? 'checked' : '';
+      html += `<label style="display:flex;align-items:center;gap:4px;background:var(--bg3);padding:6px 12px;border-radius:6px;cursor:pointer;font-size:13px;border:1px solid var(--border);transition:all .15s" onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+        <input type="checkbox" ${checked} onchange="toggleFactor('${f.id}')" style="cursor:pointer">
+        <span>${f.name}</span>
+        <span style="font-size:10px;color:var(--text2)" title="${escapeAttr(f.description)}">ℹ️</span>
+      </label>`;
+    });
+    html += '</div></div>';
+  }
+  container.innerHTML = html;
+}
+
+function toggleFactor(factorId) {
+  if (selectedFactors[factorId]) {
+    delete selectedFactors[factorId];
+  } else {
+    const fdef = builderFactors.find(f => f.id === factorId);
+    if (!fdef) return;
+    selectedFactors[factorId] = {
+      id: factorId,
+      name: fdef.name,
+      weight: 1,  // 之后归一化
+      params: {},
+      paramDefs: fdef.params
+    };
+    // 设置默认参数
+    fdef.params.forEach(p => {
+      selectedFactors[factorId].params[p.key] = p.default;
+    });
+  }
+  renderFactorChecklist();
+  updateSelectedPanel();
+}
+
+function updateSelectedPanel() {
+  const panel = document.getElementById('builderSelected');
+  const list = document.getElementById('builderSelectedList');
+  const sumDiv = document.getElementById('weightSum');
+  const selectedIds = Object.keys(selectedFactors);
+
+  if (selectedIds.length === 0) {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'block';
+
+  const count = selectedIds.length;
+  const autoWeight = Math.round(100 / count);
+
+  let totalW = 0;
+  let html = '';
+  selectedIds.forEach(fid => {
+    const sf = selectedFactors[fid];
+    const w = sf.weight;
+    totalW += w;
+    const wPct = Math.round(w * 100);
+    // 因子参数行
+    let paramInputs = '';
+    if (sf.paramDefs && sf.paramDefs.length > 0) {
+      paramInputs = '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">';
+      sf.paramDefs.forEach(p => {
+        const val = sf.params[p.key] !== undefined ? sf.params[p.key] : p.default;
+        paramInputs += `<label style="font-size:11px;color:var(--text2);display:flex;align-items:center;gap:3px">${p.label}:
+          <input type="number" value="${val}" style="width:60px;background:var(--bg);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text);font-size:11px"
+            min="${p.min||''}" max="${p.max||''}" step="${p.step||1}"
+            onchange="updateFactorParam('${fid}','${p.key}', parseFloat(this.value))">
+        </label>`;
+      });
+      paramInputs += '</div>';
+    }
+    html += `<div style="background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:10px 12px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+      <div style="flex:1;min-width:200px">
+        <span style="font-weight:600">${sf.name}</span>
+        ${paramInputs}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:12px;color:var(--text2)">权重:</span>
+        <input type="range" min="0" max="100" value="${wPct}" style="width:100px"
+          oninput="updateFactorWeight('${fid}', parseInt(this.value) / 100)">
+        <span style="font-size:14px;font-weight:700;color:var(--accent);min-width:40px;text-align:right">${wPct}%</span>
+        <button class="btn btn-sm" style="color:var(--red);border:none;background:none;font-size:16px;padding:2px 6px" onclick="removeFactor('${fid}')" title="移除">✕</button>
+      </div>
+    </div>`;
+  });
+  list.innerHTML = html;
+
+  const totalPct = Math.round(totalW * 100);
+  sumDiv.innerHTML = `总权重: <strong style="color:${Math.abs(totalPct-100)>2?'var(--red)':'var(--green)'}">${totalPct}%</strong> ${Math.abs(totalPct-100)>2 ? '⚠️ 建议调整至100%' : '✅ 权重正常'}`;
+}
+
+function updateFactorWeight(factorId, newWeight) {
+  if (selectedFactors[factorId]) {
+    selectedFactors[factorId].weight = newWeight;
+    updateSelectedPanel();
+  }
+}
+
+function updateFactorParam(factorId, paramKey, value) {
+  if (selectedFactors[factorId]) {
+    if (isNaN(value)) return;
+    selectedFactors[factorId].params[paramKey] = value;
+  }
+}
+
+function removeFactor(factorId) {
+  delete selectedFactors[factorId];
+  renderFactorChecklist();
+  updateSelectedPanel();
+}
+
+function getBuilderConfig() {
+  const name = document.getElementById('bldName').value.trim() || '自定义策略';
+  const desc = document.getElementById('bldDesc').value.trim();
+  const holding = parseInt(document.getElementById('bldHolding').value) || 15;
+  const freq = document.getElementById('bldFreq').value;
+  const enableTiming = document.getElementById('bldTiming').checked;
+  const timingMA = parseInt(document.getElementById('bldTimingMA').value) || 20;
+  const filterNew = document.getElementById('bldFilterNew').checked;
+  const listedDays = filterNew ? (parseInt(document.getElementById('bldListedDays').value) || 60) : 0;
+
+  const factorIds = Object.keys(selectedFactors);
+  const factors = factorIds.map(fid => ({
+    id: fid,
+    weight: selectedFactors[fid].weight,
+    params: { ...selectedFactors[fid].params }
+  }));
+
+  return {
+    strategy_name: name,
+    description: desc,
+    factors,
+    holding_count: holding,
+    rebalance_freq: freq,
+    enable_timing: enableTiming,
+    timing_ma: timingMA,
+    filter_listed_days: listedDays,
+  };
+}
+
+async function previewBuilderCode() {
+  const config = getBuilderConfig();
+  if (!config.factors.length) { alert('请至少选择一个因子'); return; }
+  const status = document.getElementById('bldStatus');
+  status.textContent = '⏳ 正在生成代码...';
+  const previewDiv = document.getElementById('builderPreview');
+  try {
+    const r = await fetch(API + '/builder/preview', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(config)
+    });
+    const d = await r.json();
+    if (r.ok) {
+      status.textContent = '✅ 预览就绪';
+      previewDiv.style.display = 'block';
+      previewDiv.innerHTML = `<div class="card"><h3>👁 策略代码预览</h3><div class="code-viewer">${escapeHtml(d.code)}</div></div>`;
+      // 滚动到预览区域
+      previewDiv.scrollIntoView({ behavior: 'smooth' });
+    } else {
+      status.textContent = '❌ 失败';
+      alert(d.detail || '预览失败');
+    }
+  } catch(e) {
+    status.textContent = '❌ 网络错误';
+    alert('网络错误: ' + e.message);
+  }
+}
+
+async function saveBuilderStrategy() {
+  const config = getBuilderConfig();
+  if (!config.factors.length) { alert('请至少选择一个因子'); return; }
+  const status = document.getElementById('bldStatus');
+  status.textContent = '⏳ 正在保存...';
+  try {
+    const r = await fetch(API + '/builder/save', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify(config)
+    });
+    const d = await r.json();
+    if (r.ok) {
+      status.textContent = `✅ 已保存为 v${d.version}`;
+      const previewDiv = document.getElementById('builderPreview');
+      previewDiv.style.display = 'block';
+      previewDiv.innerHTML = `<div class="card"><h3>✅ 策略已保存</h3><div class="log-line success">策略已保存为: ${d.filename} (版本 v${d.version})</div>
+        <div class="code-viewer" style="margin-top:8px;max-height:300px">${escapeHtml(d.code.substring(0, 2000))}${d.code.length>2000?'\n... (截断)':''}</div>
+        <div class="btn-group"><button class="btn btn-primary" onclick="document.querySelector('[data-page=strategies]').click()">📋 前往策略池查看</button></div></div>`;
+      checkStatus();
+    } else {
+      status.textContent = '❌ 保存失败';
+      alert(d.detail || '保存失败');
+    }
+  } catch(e) {
+    status.textContent = '❌ 网络错误';
+    alert('网络错误: ' + e.message);
+  }
+}
+
+// 择时开关联动
+document.addEventListener('DOMContentLoaded', () => {
+  const timingCB = document.getElementById('bldTiming');
+  const timingMA = document.getElementById('bldTimingMA');
+  if (timingCB && timingMA) {
+    timingCB.addEventListener('change', () => {
+      timingMA.disabled = !timingCB.checked;
+    });
+  }
+  const filterCB = document.getElementById('bldFilterNew');
+  const listedDays = document.getElementById('bldListedDays');
+  if (filterCB && listedDays) {
+    filterCB.addEventListener('change', () => {
+      listedDays.disabled = !filterCB.checked;
+    });
+  }
+});
+
+function escapeAttr(s) {
+  var el = document.createElement('span');
+  el.textContent = s;
+  return el.innerHTML;
+}
+
+// ============================================================
+// 数据管理
+// ============================================================
+async function checkDataStatus() {
+  try {
+    const r = await fetch(API + '/data/status');
+    const d = await r.json();
+    document.getElementById('dataStatus').innerHTML = `
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px">
+        <div><span style="color:var(--text2)">缓存文件:</span> <strong>${d.cache_files}</strong> 个</div>
+        <div><span style="color:var(--text2)">总大小:</span> <strong>${d.total_size_mb} MB</strong></div>
+        <div><span style="color:var(--text2)">股票数量:</span> <strong>${d.stock_count}</strong> 支</div>
+        <div><span style="color:var(--text2)">数据行数:</span> <strong>${d.row_count.toLocaleString()}</strong> 行</div>
+        <div><span style="color:var(--text2)">日期范围:</span> <strong>${d.date_range}</strong></div>
+        <div><span style="color:var(--text2)">最后更新:</span> <strong>${d.last_update}</strong></div>
+      </div>`;
+  } catch(e) {
+    document.getElementById('dataStatus').innerHTML = '<div style="color:var(--red)">❌ 获取数据状态失败</div>';
+  }
+}
+
+function startDataFetch() {
+  const pool = document.getElementById('dataPoolSelect').value;
+  const log = document.getElementById('dataFetchLog');
+  log.style.display = 'block';
+  log.innerHTML = `<div class="log-line">📥 正在连接数据下载 WebSocket (${pool})...</div>`;
+  const ws = new WebSocket(`ws://${location.host}/ws/data/fetch/${pool}`);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'progress') {
+      log.innerHTML += `<div class="log-line">${msg.message}</div>`;
+      log.scrollTop = log.scrollHeight;
+    } else if (msg.type === 'completed') {
+      const d = msg.data;
+      log.innerHTML += `<div class="log-line success">✅ 数据下载完成: ${d.stock_count} 支股票, ${d.row_count.toLocaleString()} 行</div>`;
+      ws.close();
+      checkDataStatus();
+    } else if (msg.type === 'error') {
+      log.innerHTML += `<div class="log-line error">❌ ${msg.message}</div>`;
+    }
+  };
+  ws.onclose = () => { log.innerHTML += '<div class="log-line">🔌 连接关闭</div>'; };
+  ws.onerror = () => { log.innerHTML += '<div class="log-line error">❌ WebSocket 连接失败</div>'; };
+}
+
+// ============================================================
+// 自动进化循环
+// ============================================================
+async function startAutoEvolve() {
+  const rounds = parseInt(document.getElementById('evolveRounds').value) || 3;
+  const log = document.getElementById('evolveLog');
+  const status = document.getElementById('evolveStatus');
+  log.style.display = 'block';
+  log.innerHTML = `<div class="log-line">🧬 准备启动 ${rounds} 轮进化循环...</div>`;
+
+  for (let i = 0; i < rounds; i++) {
+    status.textContent = `⏳ 第 ${i+1}/${rounds} 轮`;
+    log.innerHTML += `<div class="log-line">===== 第 ${i+1}/${rounds} 轮 =====</div>`;
+    log.scrollTop = log.scrollHeight;
+
+    // Step 1: 获取所有策略，取最新一个有结果的版本号
+    let versionToImprove = null;
+    try {
+      const r = await fetch(API + '/strategies');
+      const strategies = await r.json();
+      const withResults = strategies.filter(s => s.has_result);
+      if (withResults.length > 0) {
+        versionToImprove = withResults[withResults.length - 1].version;
+        log.innerHTML += `<div class="log-line">📋 当前最佳策略: v${versionToImprove} (夏普: ${num(withResults[withResults.length-1].sharpe_ratio)})</div>`;
+      } else {
+        log.innerHTML += '<div class="log-line error">❌ 没有已完成回测的策略，请先运行回测</div>';
+        status.textContent = '❌ 无可用策略';
+        return;
+      }
+    } catch(e) {
+      log.innerHTML += `<div class="log-line error">❌ 获取策略失败: ${e.message}</div>`;
+      return;
+    }
+
+    // Step 2: AI 改进
+    log.innerHTML += '<div class="log-line">🤖 AI 分析并改进策略...</div>';
+    try {
+      const impR = await fetch(API + '/evolve/improve/' + versionToImprove, { method: 'POST' });
+      const impD = await impR.json();
+      if (impR.ok) {
+        log.innerHTML += `<div class="log-line success">✅ 改进完成: ${impD.filename}</div>`;
+        versionToImprove = impD.version;
+      } else {
+        log.innerHTML += `<div class="log-line error">❌ AI 改进失败: ${impD.detail}</div>`;
+        status.textContent = '❌ 改进失败';
+        return;
+      }
+    } catch(e) {
+      log.innerHTML += `<div class="log-line error">❌ AI 改进请求失败: ${e.message}</div>`;
+      return;
+    }
+
+    // Step 3: 回测新策略（使用 WebSocket）
+    log.innerHTML += '<div class="log-line">🔬 回测改进后的策略...</div>';
+    try {
+      const btResult = await new Promise((resolve, reject) => {
+        const ws = new WebSocket(`ws://${location.host}/api/backtest/ws/${versionToImprove}`);
+        ws.onmessage = (e) => {
+          const msg = JSON.parse(e.data);
+          if (msg.type === 'progress') {
+            log.innerHTML += `<div class="log-line">  ${msg.message}</div>`;
+            log.scrollTop = log.scrollHeight;
+          } else if (msg.type === 'result') {
+            const m = msg.metrics;
+            log.innerHTML += `<div class="log-line success">✅ 第${i+1}轮回测完成: 夏普 ${num(m.sharpe_ratio)} | 总收益 ${pct(m.total_return)} | 回撤 ${pct(m.max_drawdown)}</div>`;
+            resolve(m);
+          } else if (msg.type === 'error') {
+            log.innerHTML += `<div class="log-line error">❌ ${msg.message}</div>`;
+            resolve(null);
+          } else if (msg.type === 'completed') {
+            ws.close();
+          }
+        };
+        ws.onerror = () => { log.innerHTML += '<div class="log-line error">❌ WebSocket 连接失败</div>'; resolve(null); };
+        ws.onclose = () => { /* already resolved */ };
+      });
+    } catch(e) {
+      log.innerHTML += `<div class="log-line error">❌ 回测失败: ${e.message}</div>`;
+    }
+
+    // 更新系统状态
+    checkStatus();
+  }
+
+  status.textContent = `✅ 完成 ${rounds} 轮进化`;
+  log.innerHTML += `<div class="log-line success">🧬 进化循环结束！前往「📈 对比」页面查看进化趋势</div>`;
 }
 
 // ── 初始化 ──

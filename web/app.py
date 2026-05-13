@@ -16,12 +16,14 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
-from fastapi import FastAPI
+import asyncio
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from web.routers import strategies, backtest, results, evolution
-from web.services.bridge import get_system_status
+from web.routers import strategies, backtest, results, evolution, builder
+from web.services.bridge import get_system_status, get_data_status, run_fetch_data_web
 
 # ── 应用初始化 ──
 
@@ -46,6 +48,7 @@ app.include_router(strategies.router)
 app.include_router(backtest.router)
 app.include_router(results.router)
 app.include_router(evolution.router)
+app.include_router(builder.router)
 
 
 # ── 根路径 ──
@@ -54,6 +57,59 @@ app.include_router(evolution.router)
 async def status():
     """系统状态"""
     return get_system_status()
+
+
+@app.get("/api/data/status")
+async def data_status():
+    """数据缓存状态"""
+    return get_data_status()
+
+
+class FetchRequest(BaseModel):
+    stock_pool: str = "hs300"
+
+
+@app.post("/api/data/fetch")
+async def fetch_data(req: FetchRequest):
+    """触发数据下载（同步，小规模数据快速返回）"""
+    from threading import Lock
+    result = run_fetch_data_web(req.stock_pool)
+    if not result.get("success"):
+        raise HTTPException(status_code=500, detail=result.get("error", "数据下载失败"))
+    return result
+
+
+@app.websocket("/ws/data/fetch/{stock_pool}")
+async def fetch_data_ws(websocket: WebSocket, stock_pool: str):
+    """WebSocket 实时数据下载进度推送"""
+    await websocket.accept()
+    try:
+        from web.services.bridge import run_fetch_data_web
+        loop = asyncio.get_event_loop()
+        
+        async def push_progress(msg):
+            try:
+                await websocket.send_json({"type": "progress", "message": msg})
+            except Exception:
+                pass
+        
+        def sync_progress(msg: str):
+            asyncio.run_coroutine_threadsafe(push_progress(msg), loop)
+        
+        result = await loop.run_in_executor(
+            None, lambda: run_fetch_data_web(stock_pool, progress_callback=sync_progress)
+        )
+        if result.get("success"):
+            await websocket.send_json({"type": "completed", "data": result})
+        else:
+            await websocket.send_json({"type": "error", "message": result.get("error", "未知错误")})
+    except WebSocketDisconnect:
+        pass
+    except Exception as e:
+        try:
+            await websocket.send_json({"type": "error", "message": str(e)})
+        except Exception:
+            pass
 
 
 # ── 静态文件（前端 HTML/JS/CSS） ──

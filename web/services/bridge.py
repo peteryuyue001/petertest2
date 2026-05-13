@@ -4,6 +4,7 @@ Bridge — 封装现有 engine/data/llm 模块，为 Web API 提供统一调用�
 
 import json
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -159,6 +160,79 @@ def get_evolution_comparison() -> List[Dict]:
         })
     comparison.sort(key=lambda x: x["version"])
     return comparison
+
+
+def get_data_status() -> Dict:
+    """获取数据缓存状态"""
+    import os
+    cache_dir = PROJECT_ROOT / "data" / "cache"
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    
+    parquet_files = sorted(cache_dir.glob("*.parquet"))
+    total_size = sum(f.stat().st_size for f in parquet_files)
+    
+    date_range = "无缓存"
+    stock_count = 0
+    row_count = 0
+    last_update_str = "无"
+    
+    if parquet_files:
+        last_update = max(f.stat().st_mtime for f in parquet_files)
+        last_update_str = datetime.fromtimestamp(last_update).strftime("%Y-%m-%d %H:%M")
+        # 读取主数据文件（排除 benchmark 文件）
+        data_files = [f for f in parquet_files if not f.name.startswith("benchmark")]
+        if data_files:
+            try:
+                df = pd.read_parquet(data_files[0])
+                date_range = f"{df['date'].min().date()} → {df['date'].max().date()}"
+                stock_count = int(df['code'].nunique())
+                row_count = int(len(df))
+            except Exception:
+                pass
+    
+    return {
+        "cache_files": len(parquet_files),
+        "total_size_mb": round(total_size / 1024 / 1024, 2),
+        "date_range": date_range,
+        "stock_count": stock_count,
+        "row_count": row_count,
+        "last_update": last_update_str,
+        "stock_pools": ["hs300", "csi500", "csi1000"],
+    }
+
+
+def run_fetch_data_web(stock_pool: str = "hs300", progress_callback=None) -> Dict:
+    """Web 端触发数据下载"""
+    from data.fetcher import DataFetcher
+    import os
+    from datetime import datetime
+    
+    cfg = load_config()
+    fetcher = DataFetcher(cache_dir=cfg.DATA_CACHE_DIR)
+    
+    if progress_callback:
+        progress_callback(f"📊 正在获取 {stock_pool} 成分股并下载日线数据...")
+    
+    try:
+        df = fetcher.fetch_daily(
+            stock_pool=stock_pool,
+            start_date=cfg.DATA_START_DATE,
+            end_date=cfg.DATA_END_DATE,
+        )
+    except Exception as e:
+        return {"success": False, "error": str(e), "stock_pool": stock_pool}
+    
+    if progress_callback:
+        progress_callback(f"✅ 数据就绪: {len(df)} 行, {df['code'].nunique()} 支股票")
+    
+    return {
+        "success": True,
+        "stock_pool": stock_pool,
+        "row_count": len(df),
+        "stock_count": int(df['code'].nunique()),
+        "date_range": f"{df['date'].min()} → {df['date'].max()}",
+        "update_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+    }
 
 
 def get_system_status() -> Dict:
