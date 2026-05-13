@@ -53,7 +53,7 @@ def ensure_directories() -> None:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Quant Evolution 量化AI回测系统")
-    parser.add_argument("--step", type=int, choices=range(1, 9), help="Run specific step (1-8)")
+    parser.add_argument("--step", type=int, choices=range(1, 10), help="Run specific step (1-9)")
     parser.add_argument("--strategy", type=str, help="Specify strategy file, e.g. strategy_v1.py")
     parser.add_argument("--all", action="store_true", help="Run all steps 1-6 sequentially")
     return parser.parse_args()
@@ -473,6 +473,179 @@ def step_delete_strategy(cfg) -> None:
         print(f"Deleted result: {result_path.name}")
 
 
+def step_chat_with_ai(cfg) -> None:
+    """
+    Step 9: Chat with AI — 自由对话模式
+
+    提供上下文：
+    - 当前策略池概览
+    - 回测结果摘要
+    - 用户可以自由提问（因子设计、市场分析、代码改进等）
+    """
+    print("\n" + "=" * 52)
+    print("  9. AI Chat")
+    print("=" * 52)
+
+    from llm.deepseek_client import create_client_from_config
+
+    try:
+        client = create_client_from_config()
+    except ValueError as e:
+        print(f"\n{e}")
+        return
+
+    # ---- 构建系统上下文 ----
+    context_parts = ["你是一个顶级的量化投资助手，当前系统是一个「量化AI进化系统」。"]
+
+    # 策略池概览
+    pool_dir = PROJECT_ROOT / "strategy_pool"
+    strategies = sorted(pool_dir.glob("strategy_v*.py"))
+    if strategies:
+        context_parts.append(f"\n## 当前策略池\n共 {len(strategies)} 个策略文件：")
+        for s in strategies:
+            version = s.stem.replace("strategy_v", "")
+            context_parts.append(f"- strategy_v{version}.py")
+    else:
+        context_parts.append("\n## 当前策略池\n（空）尚未生成任何策略。")
+
+    # 回测结果摘要
+    results_dir = PROJECT_ROOT / "results"
+    results = sorted(results_dir.glob("strategy_v*.json"))
+    if results:
+        context_parts.append(f"\n## 回测结果摘要\n共 {len(results)} 条记录：")
+        for r in results:
+            with open(r) as f:
+                m = json.load(f)
+            name = m.get("strategy_name", r.stem)
+            tr = m.get("total_return", 0) * 100
+            sr = m.get("sharpe_ratio", 0)
+            dd = m.get("max_drawdown", 0) * 100
+            context_parts.append(f"- {name}: 总收益 {tr:+.2f}%, 夏普 {sr:.2f}, 回撤 {dd:.2f}%")
+    else:
+        context_parts.append("\n## 回测结果\n（空）尚未运行回测。")
+
+    context_parts.append("\n## 当前配置")
+    context_parts.append(f"- 股票池: {cfg.STOCK_POOL}")
+    context_parts.append(f"- 数据区间: {cfg.DATA_START_DATE} → {cfg.DATA_END_DATE}")
+    context_parts.append(f"- 初始资金: {cfg.INITIAL_CAPITAL:,.0f} 元")
+    context_parts.append(f"- 回测引擎: VectorBT")
+
+    context_parts.append(
+        "\n用户可能会就以下话题向你提问："
+        "\n- 如何设计新的选股因子（A股场景）"
+        "\n- 当前策略的改进方向"
+        "\n- 风险管理和仓位优化"
+        "\n- 市场行情分析"
+        "\n- Python/量化编程问题"
+    )
+
+    system_prompt = "\n".join(context_parts)
+
+    print("\n系统上下文已加载:")
+    print(f"  - 策略池: {len(strategies)} 个文件")
+    print(f"  - 回测结果: {len(results)} 条")
+    print(f"  - 股票池: {cfg.STOCK_POOL}")
+    print()
+    print("🤖 AI 量化助手已就绪！输入你的问题开始对话。")
+    print("   输入 'exit' 或 'quit' 退出对话。")
+    print("   输入 '/code' 切换为代码生成模式（AI 只输出策略代码）。")
+    print("-" * 60)
+
+    # 对话历史
+    messages = [
+        {"role": "system", "content": system_prompt},
+    ]
+
+    code_mode = False  # 普通对话模式
+
+    while True:
+        try:
+            user_input = input("\n🧑 > ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\n   [退出对话]")
+            break
+
+        if not user_input:
+            continue
+
+        # 命令处理
+        if user_input.lower() in ("exit", "quit", "退出"):
+            print("   [退出 AI 对话]")
+            break
+
+        if user_input.lower() in ("/code", "/策略"):
+            code_mode = not code_mode
+            status = "✅ 代码模式已开启 (AI 将只输出 Python 策略代码)" if code_mode else "🔄 已切换回普通对话模式"
+            print(f"   {status}")
+            continue
+
+        if user_input.lower() in ("/help", "/帮助"):
+            print("\n   可用命令:")
+            print("   /code    - 切换代码生成模式")
+            print("   /context - 显示当前系统上下文")
+            print("   exit     - 退出对话")
+            continue
+
+        if user_input.lower() == "/context":
+            print(f"\n   📋 系统上下文 (前20行):")
+            for line in system_prompt.split("\n")[:20]:
+                print(f"   {line}")
+            continue
+
+        # 构建用户消息
+        if code_mode:
+            user_message = (
+                f"{user_input}\n\n"
+                "请直接输出完整的 Python 策略代码（继承 BaseStrategy），"
+                "用 ```python 包裹，不要任何解释文字。"
+            )
+        else:
+            user_message = user_input
+
+        messages.append({"role": "user", "content": user_message})
+
+        # 调用 AI
+        print("   🤖 思考中...", end=" ", flush=True)
+        response, error = client.chat(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            temperature=0.8,
+            max_tokens=2048,
+        )
+
+        if error:
+            print(f"\n   ❌ {error}")
+            messages.pop()  # 移除失败的消息
+            continue
+
+        if not response:
+            print("\n   ❌ AI 返回空响应")
+            messages.pop()
+            continue
+
+        messages.append({"role": "assistant", "content": response})
+
+        # 显示回复
+        print("\r" + "-" * 60)
+        print(response)
+        print("-" * 60)
+
+        # 代码模式下可保存
+        if code_mode and "```python" in response:
+            save = input("\n   💾 是否保存此代码为新策略？[y/N]: ").strip().lower()
+            if save in ("y", "yes"):
+                import re
+                code_match = re.search(r'```python\s*\n(.*?)```', response, re.DOTALL)
+                if code_match:
+                    code = code_match.group(1).strip()
+                    version = _get_next_version()
+                    sp = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
+                    sp.write_text(code, encoding="utf-8")
+                    print(f"   ✅ 已保存: strategy_pool/strategy_v{version}.py")
+                else:
+                    print("   ⚠️ 未能提取代码块")
+
+
 def step_fix_code(cfg) -> Optional[str]:
     """Step 7: Manually fix strategy errors via AI"""
     print("\n" + "=" * 52)
@@ -708,6 +881,7 @@ def show_menu():
 |  6. View evolution history                         |
 |  7. Manually fix strategy errors (AI)              |
 |  8. Delete strategies                              |
+|  9. AI Chat                                        |
 |  0. Exit                                           |
 |                                                    |
 +====================================================+
@@ -755,7 +929,7 @@ def main():
     if args.step is not None:
         mapping = {1: step_fetch_data, 2: step_generate_strategy, 3: step_run_backtest,
                    4: step_show_report, 5: step_evolve, 6: step_show_history,
-                   7: step_fix_code, 8: step_delete_strategy}
+                   7: step_fix_code, 8: step_delete_strategy, 9: step_chat_with_ai}
         func = mapping.get(args.step)
         if func:
             if args.step == 3:
@@ -767,7 +941,7 @@ def main():
     # Interactive mode
     while True:
         show_menu()
-        choice = input("Select [0-8] > ").strip()
+        choice = input("Select [0-9] > ").strip()
 
         if choice == "0":
             print("\nGoodbye!")
@@ -788,8 +962,10 @@ def main():
             step_fix_code(cfg)
         elif choice == "8":
             step_delete_strategy(cfg)
+        elif choice == "9":
+            step_chat_with_ai(cfg)
         else:
-            print("Invalid selection, please enter 0-8")
+            print("Invalid selection, please enter 0-9")
 
         if choice != "0":
             input("\nPress Enter to continue...")
