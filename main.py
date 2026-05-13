@@ -16,11 +16,13 @@
 import argparse
 import json
 import os
+import sys
 import time
 from pathlib import Path
 from typing import Optional, Dict
 
 PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT))
 
 
 def load_config():
@@ -30,7 +32,6 @@ def load_config():
         return config
     except ImportError:
         print("⚠️  config.py 未找到，使用默认配置")
-        # 动态加载 config.example.py（文件名含点号，无法直接 import）
         import importlib.util
         example_path = PROJECT_ROOT / "config.example.py"
         if example_path.exists():
@@ -52,9 +53,9 @@ def ensure_directories() -> None:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Quant Evolution 量化AI回测系统")
-    parser.add_argument("--step", type=int, choices=range(1, 8), help="运行指定步骤编号，默认进入交互式菜单")
-    parser.add_argument("--strategy", type=str, help="指定回测策略文件，例如 strategy_v1.py")
-    parser.add_argument("--all", action="store_true", help="顺序运行全部步骤 1-6")
+    parser.add_argument("--step", type=int, choices=range(1, 9), help="Run specific step (1-8)")
+    parser.add_argument("--strategy", type=str, help="Specify strategy file, e.g. strategy_v1.py")
+    parser.add_argument("--all", action="store_true", help="Run all steps 1-6 sequentially")
     return parser.parse_args()
 
 
@@ -63,11 +64,9 @@ def parse_args():
 # ============================================================
 
 def step_fetch_data(cfg) -> Optional[object]:
-    """
-    Step 1: 下载/更新 A股数据
-    """
+    """Step 1: Download/Update A-share data"""
     print("\n" + "=" * 52)
-    print("  1️⃣ Step 1: 下载/更新 A股数据")
+    print("  1. Download/Update A-share data")
     print("=" * 52)
 
     from data.fetcher import DataFetcher
@@ -76,30 +75,24 @@ def step_fetch_data(cfg) -> Optional[object]:
     end = cfg.DATA_END_DATE
     pool = cfg.STOCK_POOL
 
-    print(f"  股票池: {pool}")
-    print(f"  时间区间: {start} → {end}")
+    print(f"  Stock pool: {pool}")
+    print(f"  Date range: {start} -> {end}")
     print()
 
     try:
         fetcher = DataFetcher(cache_dir=cfg.DATA_CACHE_DIR)
-        df = fetcher.fetch_daily(
-            stock_pool=pool,
-            start_date=start,
-            end_date=end,
-        )
-        print(f"\n✅ 数据就绪: {len(df)} 行, {df['code'].nunique()} 支股票")
+        df = fetcher.fetch_daily(stock_pool=pool, start_date=start, end_date=end)
+        print(f"\nData ready: {len(df)} rows, {df['code'].nunique()} stocks")
         return fetcher
     except Exception as e:
-        print(f"\n❌ 数据获取失败: {e}")
+        print(f"\nData fetch failed: {e}")
         return None
 
 
 def step_generate_strategy(cfg) -> Optional[str]:
-    """
-    Step 2: 用 DeepSeek 生成初始策略
-    """
+    """Step 2: DeepSeek generates initial strategy"""
     print("\n" + "=" * 52)
-    print("  🧠 Step 2: DeepSeek 生成策略")
+    print("  2. DeepSeek Strategy Generation")
     print("=" * 52)
 
     from llm.deepseek_client import create_client_from_config
@@ -107,43 +100,40 @@ def step_generate_strategy(cfg) -> Optional[str]:
     try:
         client = create_client_from_config()
     except ValueError as e:
-        print(f"\n❌ {e}")
+        print(f"\n{e}")
         return None
 
-    print("\n请描述你想要的策略方向（直接回车使用默认方向）:")
-    print("  示例: '生成一个结合动量和低波动的选股策略'")
-    print("  默认: '生成一个 A 股沪深300多因子选股策略'")
-    instruction = input("\n📝 > ").strip()
+    print("\nDescribe your strategy direction (Enter for default):")
+    print("  Example: 'Generate a strategy combining momentum and low volatility'")
+    print("  Default: 'Generate a CSI300 multi-factor A-share strategy'")
+    instruction = input("\n> ").strip()
 
     if not instruction:
         instruction = (
-            "生成一个 A 股沪深300多因子选股策略。"
-            "包含以下因子：20日动量、波动率过滤、换手率因子。"
-            "月度调仓，持仓 20 支，等权重。"
+            "Generate a CSI300 multi-factor A-share stock selection strategy. "
+            "Factors: 20-day momentum, volatility filter, turnover rate factor. "
+            "Monthly rebalance, 20 holdings, equal weight."
         )
 
-    print(f"\n🤖 正在调用 DeepSeek 生成策略...")
-    print(f"   指令: {instruction[:80]}...")
+    print(f"\nCalling DeepSeek to generate strategy...")
+    print(f"   Instruction: {instruction[:80]}...")
 
     code, error = client.generate_strategy(instruction=instruction)
 
     if error:
-        print(f"\n❌ 策略生成失败: {error}")
+        print(f"\nStrategy generation failed: {error}")
         return None
 
     if not code:
-        print("\n❌ 策略生成返回空内容")
+        print("\nStrategy generation returned empty content")
         return None
 
-    # 确定版本号
     version = _get_next_version()
-
-    # 保存策略文件
     strategy_path = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
     strategy_path.write_text(code, encoding="utf-8")
 
-    print(f"\n✅ 策略已保存: strategy_pool/strategy_v{version}.py")
-    print(f"\n--- 策略代码预览 (前 30 行) ---")
+    print(f"\nStrategy saved: strategy_pool/strategy_v{version}.py")
+    print(f"\n--- Code preview (first 30 lines) ---")
     lines = code.split("\n")[:30]
     for line in lines:
         print(f"  {line}")
@@ -152,34 +142,32 @@ def step_generate_strategy(cfg) -> Optional[str]:
 
 
 def step_run_backtest(cfg, fetcher=None, strategy_choice: Optional[str] = None) -> Optional[Dict]:
-    """
-    Step 3: 运行回测
-    """
+    """Step 3: Run backtest"""
     print("\n" + "=" * 52)
-    print("  🔬 Step 3: 运行回测")
+    print("  3. Run Backtest")
     print("=" * 52)
 
     pool_dir = PROJECT_ROOT / "strategy_pool"
     strategies = sorted(pool_dir.glob("strategy_v*.py"))
 
     if not strategies:
-        print("\n❌ 没有找到策略文件！请先运行 Step 2 生成策略。")
+        print("\nNo strategy files found! Run Step 2 first.")
         return None
 
-    print("\n可用策略:")
+    print("\nAvailable strategies:")
     for i, s in enumerate(strategies):
         size = s.stat().st_size
         print(f"  [{i+1}] {s.name} ({size:,} bytes)")
 
-    print(f"  [A] 运行最新策略")
-    print(f"  [B] 运行所有策略")
+    print(f"  [A] Run latest strategy")
+    print(f"  [B] Run ALL strategies")
 
     choice = strategy_choice
     if choice is None:
-        choice = input("\n📝 请选择 > ").strip().upper()
+        choice = input("\nSelect > ").strip().upper()
     else:
         choice = choice.strip().upper()
-        print(f"\n📝 选择: {choice}")
+        print(f"\nSelect: {choice}")
 
     if choice == "B":
         return _run_all_backtests(cfg, fetcher, strategies)
@@ -191,50 +179,47 @@ def step_run_backtest(cfg, fetcher=None, strategy_choice: Optional[str] = None) 
             idx = int(choice) - 1
             target = strategies[idx]
         except (ValueError, IndexError):
-            print("❌ 无效选择")
+            print("Invalid selection")
             return None
 
     return _run_single_backtest(cfg, fetcher, target)
 
 
 def step_show_report(cfg) -> None:
-    """
-    Step 4: 查看绩效报告
-    """
+    """Step 4: View performance report"""
     print("\n" + "=" * 52)
-    print("  📈 Step 4: 绩效报告")
+    print("  4. Performance Report")
     print("=" * 52)
 
     results_dir = PROJECT_ROOT / "results"
     results = sorted(results_dir.glob("strategy_v*.json"))
 
     if not results:
-        print("\n❌ 没有回测结果！请先运行 Step 3 进行回测。")
+        print("\nNo backtest results! Run Step 3 first.")
         return
 
-    print("\n已有回测结果:")
+    print("\nExisting backtest results:")
     for i, r in enumerate(results):
         with open(r) as f:
             data = json.load(f)
         name = data.get("strategy_name", r.stem)
         total_ret = data.get("total_return", 0) * 100
         sharpe = data.get("sharpe_ratio", 0)
-        print(f"  [{i+1}] {name} | 总收益: {total_ret:+.2f}% | 夏普: {sharpe:.2f}")
+        print(f"  [{i+1}] {name} | Total Return: {total_ret:+.2f}% | Sharpe: {sharpe:.2f}")
 
-    print("\n选择要查看的详细报告 (直接回车看最新):")
-    choice = input("📝 > ").strip()
+    print("\nSelect report to view (Enter for latest):")
+    choice = input("> ").strip()
 
     if choice:
         try:
             idx = int(choice) - 1
             target = results[idx]
         except (ValueError, IndexError):
-            print("❌ 无效选择")
+            print("Invalid selection")
             return
     else:
         target = results[-1]
 
-    # 显示报告
     with open(target) as f:
         metrics = json.load(f)
 
@@ -243,11 +228,10 @@ def step_show_report(cfg) -> None:
     report = format_metrics_report(metrics, name)
     print(report)
 
-    # 显示策略对比表
     if len(results) >= 2:
-        print("\n📊 策略进化对比:")
+        print("\nStrategy Evolution Comparison:")
         print("-" * 70)
-        print(f"{'策略':20s} {'总收益':>8s} {'年化':>8s} {'回撤':>8s} {'夏普':>6s} {'卡玛':>6s}")
+        print(f"{'Strategy':20s} {'TotRet':>8s} {'AnnRet':>8s} {'MaxDD':>8s} {'Sharpe':>6s} {'Calmar':>6s}")
         print("-" * 70)
         for r in results:
             with open(r) as f:
@@ -263,86 +247,110 @@ def step_show_report(cfg) -> None:
 
 
 def step_evolve(cfg) -> Optional[str]:
-    """
-    Step 5: 反馈改进 — 将回测结果发给 AI 生成改进版
-    """
+    """Step 5: Feedback & Evolution — select a strategy and let AI improve it"""
     print("\n" + "=" * 52)
-    print("  🔄 Step 5: 反馈改进 — 策略进化")
+    print("  5. Feedback & Evolution")
     print("=" * 52)
 
     from llm.deepseek_client import create_client_from_config
     from engine.analyzer import metrics_to_feedback_context
 
-    try:
-        client = create_client_from_config()
-    except ValueError as e:
-        print(f"\n❌ {e}")
-        return None
-
-    # 找到最新结果和最新策略
     results_dir = PROJECT_ROOT / "results"
     results = sorted(results_dir.glob("strategy_v*.json"))
     if not results:
-        print("\n❌ 没有回测结果！请先运行 Step 3。")
+        print("\nNo backtest results! Run Step 3 first.")
         return None
 
     pool_dir = PROJECT_ROOT / "strategy_pool"
     strategies = sorted(pool_dir.glob("strategy_v*.py"))
     if not strategies:
-        print("\n❌ 没有策略文件！")
+        print("\nNo strategy files!")
         return None
 
-    # 加载最新结果
-    with open(results[-1]) as f:
+    print("\nSelectable strategies to improve:")
+    print("-" * 75)
+    print(f"{'#':3s} {'Version':8s} {'Strategy Name':25s} {'TotRet':>8s} {'Sharpe':>7s}")
+    print("-" * 75)
+    for i, r in enumerate(results):
+        with open(r) as f:
+            m = json.load(f)
+        ver = f"v{m.get('version', '?')}"
+        name = m.get("strategy_name", r.stem)[:25]
+        tr = m.get("total_return", 0) * 100
+        sr = m.get("sharpe_ratio", 0)
+        print(f"{i+1:3d} {ver:8s} {name:25s} {tr:7.2f}% {sr:7.2f}")
+    print("-" * 75)
+    print(f"  [A] Latest strategy (v{len(results)})")
+    print(f"  [B] Best Sharpe ratio strategy")
+
+    choice = input("\nSelect strategy to improve > ").strip().upper()
+
+    selected_result = None
+    if choice == "A" or choice == "":
+        selected_result = results[-1]
+    elif choice == "B":
+        def _load_result(path):
+            with open(path) as f:
+                return json.load(f)
+        selected_result = max(results, key=lambda r: _load_result(r).get("sharpe_ratio", -999))
+    else:
+        try:
+            idx = int(choice) - 1
+            selected_result = results[idx]
+        except (ValueError, IndexError):
+            print("Invalid selection")
+            return None
+
+    with open(selected_result) as f:
         metrics = json.load(f)
 
     strategy_name = metrics.get("strategy_name", "Unknown")
     strategy_version = metrics.get("version", len(results))
 
-    # 加载最新策略代码
-    latest_code = strategies[-1].read_text(encoding="utf-8")
+    strategy_path = pool_dir / selected_result.stem.replace(".json", ".py")
+    if strategy_path.exists():
+        current_code = strategy_path.read_text(encoding="utf-8")
+    else:
+        current_code = strategies[-1].read_text(encoding="utf-8")
 
-    # 生成反馈上下文
-    feedback = metrics_to_feedback_context(
-        metrics, strategy_name, strategy_version
-    )
+    feedback = metrics_to_feedback_context(metrics, strategy_name, strategy_version)
 
-    print(f"\n📊 当前策略: {strategy_name} (v{strategy_version})")
-    print(f"   总收益: {metrics.get('total_return', 0)*100:.2f}%")
-    print(f"   夏普: {metrics.get('sharpe_ratio', 0):.2f}")
-    print(f"   最大回撤: {metrics.get('max_drawdown', 0)*100:.2f}%")
-    print(f"\n🤖 正在将结果发送给 DeepSeek 进行分析和改进...")
+    print(f"\nSelected strategy: {strategy_name} (v{strategy_version})")
+    print(f"   Total Return: {metrics.get('total_return', 0)*100:.2f}%")
+    print(f"   Sharpe: {metrics.get('sharpe_ratio', 0):.2f}")
+    print(f"   Max DD: {metrics.get('max_drawdown', 0)*100:.2f}%")
+    print(f"\nSending to DeepSeek for analysis and improvement...")
 
-    code, error = client.analyze_and_improve(
-        feedback_context=feedback,
-        current_code=latest_code,
-    )
+    try:
+        client = create_client_from_config()
+    except ValueError as e:
+        print(f"\n{e}")
+        return None
+
+    code, error = client.analyze_and_improve(feedback_context=feedback, current_code=current_code)
 
     if error:
-        print(f"\n❌ 策略改进失败: {error}")
+        print(f"\nImprovement failed: {error}")
         return None
 
     if not code:
-        print("\n❌ 策略改进返回空内容")
+        print("\nImprovement returned empty content")
         return None
 
-    # 保存新版本
     version = _get_next_version()
-    strategy_path = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
-    strategy_path.write_text(code, encoding="utf-8")
+    new_strategy_path = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
+    new_strategy_path.write_text(code, encoding="utf-8")
 
-    print(f"\n✅ 改进策略已保存: strategy_pool/strategy_v{version}.py")
-    print(f"\n💡 建议: 立即运行 Step 3 回测，验证改进效果！")
+    print(f"\nImproved strategy saved: strategy_pool/strategy_v{version}.py")
+    print(f"\nTip: Run Step 3 now to verify improvements!")
 
-    return str(strategy_path)
+    return str(new_strategy_path)
 
 
 def step_show_history(cfg) -> None:
-    """
-    Step 6: 查看进化历史
-    """
+    """Step 6: View evolution history"""
     print("\n" + "=" * 52)
-    print("  📋 策略进化历史")
+    print("  6. Evolution History")
     print("=" * 52)
 
     results_dir = PROJECT_ROOT / "results"
@@ -351,16 +359,16 @@ def step_show_history(cfg) -> None:
     pool_dir = PROJECT_ROOT / "strategy_pool"
     strategies = sorted(pool_dir.glob("strategy_v*.py"))
 
-    print(f"\n策略文件: {len(strategies)} 个")
-    print(f"回测结果: {len(results)} 个")
+    print(f"\nStrategy files: {len(strategies)}")
+    print(f"Backtest results: {len(results)}")
     print()
 
     if not results:
-        print("暂无记录。")
+        print("No records yet.")
         return
 
     print("-" * 80)
-    print(f"{'版本':6s} {'总收益':>8s} {'年化':>8s} {'回撤':>8s} {'夏普':>6s} {'卡玛':>6s} {'IR':>6s}")
+    print(f"{'Ver':6s} {'TotRet':>8s} {'AnnRet':>8s} {'MaxDD':>8s} {'Sharpe':>6s} {'Calmar':>6s} {'IR':>6s}")
     print("-" * 80)
 
     for r in results:
@@ -377,21 +385,98 @@ def step_show_history(cfg) -> None:
 
     print("-" * 80)
 
-    # 找最佳策略
     def _load_result(path):
         with open(path) as f:
             return json.load(f)
     best = max(results, key=lambda r: _load_result(r).get("sharpe_ratio", -999))
     best_m = _load_result(best)
-    print(f"\n🏆 最佳策略: {best_m.get('strategy_name', best.stem)} (夏普: {best_m.get('sharpe_ratio', 0):.2f})")
+    print(f"\nBest strategy: {best_m.get('strategy_name', best.stem)} (Sharpe: {best_m.get('sharpe_ratio', 0):.2f})")
+
+
+def step_delete_strategy(cfg) -> None:
+    """Step 8: Delete strategy files and/or backtest results"""
+    print("\n" + "=" * 52)
+    print("  8. Delete Strategy")
+    print("=" * 52)
+
+    pool_dir = PROJECT_ROOT / "strategy_pool"
+    strategies = sorted(pool_dir.glob("strategy_v*.py"))
+    results_dir = PROJECT_ROOT / "results"
+    results = sorted(results_dir.glob("strategy_v*.json"))
+
+    if not strategies and not results:
+        print("\nNothing to delete.")
+        return
+
+    print("\nExisting strategies:")
+    print("-" * 75)
+    print(f"{'#':3s} {'Version':10s} {'Strategy File':25s} {'Has Result':10s} {'File Size':>8s}")
+    print("-" * 75)
+
+    result_stems = {r.stem for r in results}
+    for i, s in enumerate(strategies):
+        has_result = "Yes" if s.stem in result_stems else "No"
+        size = f"{s.stat().st_size:,} B"
+        print(f"{i+1:3d} {s.stem:10s} {s.name:25s} {has_result:10s} {size:>8s}")
+
+    print("-" * 75)
+    print(f"  [A] Delete ALL strategies AND results")
+    print(f"  [B] Delete latest strategy")
+    print(f"  [C] Delete ALL backtest results only (keep strategy code)")
+    print(f"  [0] Cancel")
+
+    choice = input("\nSelect > ").strip().upper()
+
+    if choice == "0" or choice == "":
+        print("  Cancelled.")
+        return
+
+    if choice == "A":
+        confirm = input("Confirm delete ALL strategy files and results? [yes/NO]: ").strip()
+        if confirm != "yes":
+            print("  Cancelled.")
+            return
+        for s in strategies:
+            s.unlink()
+        for r in results:
+            r.unlink()
+        print(f"Deleted {len(strategies)} strategy files, {len(results)} backtest results.")
+        return
+
+    if choice == "B":
+        target_st = strategies[-1]
+    elif choice == "C":
+        for r in results:
+            r.unlink()
+        print(f"Deleted {len(results)} backtest results (strategy files preserved).")
+        return
+    else:
+        try:
+            idx = int(choice) - 1
+            target_st = strategies[idx]
+        except (ValueError, IndexError):
+            print("Invalid selection")
+            return
+
+    target_name = target_st.stem
+    confirm = input(f"Confirm delete {target_name}? [y/N]: ").strip().lower()
+    if confirm not in ("y", "yes"):
+        print("  Cancelled.")
+        return
+
+    target_st.unlink()
+    print(f"Deleted strategy: {target_st.name}")
+
+    result_path = results_dir / f"{target_name}.json"
+    if result_path.exists():
+        result_path.unlink()
+        print(f"Deleted result: {result_path.name}")
 
 
 def step_fix_code(cfg) -> Optional[str]:
-    """
-    Step 7 (隐藏): 手动修复最近策略的报错
-    """
+    """Step 7: Manually fix strategy errors via AI"""
     print("\n" + "=" * 52)
-    print("  🔧 Step 7: 代码修复")
+    print("  7. Code Fix (AI)")
     print("=" * 52)
 
     from llm.deepseek_client import create_client_from_config
@@ -399,20 +484,20 @@ def step_fix_code(cfg) -> Optional[str]:
     try:
         client = create_client_from_config()
     except ValueError as e:
-        print(f"\n❌ {e}")
+        print(f"\n{e}")
         return None
 
     pool_dir = PROJECT_ROOT / "strategy_pool"
     strategies = sorted(pool_dir.glob("strategy_v*.py"))
     if not strategies:
-        print("\n❌ 没有策略文件！")
+        print("\nNo strategy files!")
         return None
 
     latest = strategies[-1]
     code = latest.read_text(encoding="utf-8")
 
-    print(f"\n当前策略: {latest.name}")
-    print("\n请输入报错信息 (可多行，输入空行结束):")
+    print(f"\nCurrent strategy: {latest.name}")
+    print("\nPaste error message (empty line to finish):")
 
     lines = []
     while True:
@@ -423,29 +508,26 @@ def step_fix_code(cfg) -> Optional[str]:
 
     error_msg = "\n".join(lines)
     if not error_msg.strip():
-        print("❌ 未输入报错信息")
+        print("No error message provided")
         return None
 
-    print(f"\n🤖 正在请求 DeepSeek 修复...")
+    print(f"\nRequesting DeepSeek to fix...")
 
-    fixed_code, error = client.fix_code(
-        error_message=error_msg,
-        strategy_code=code,
-    )
+    fixed_code, error = client.fix_code(error_message=error_msg, strategy_code=code)
 
     if error:
-        print(f"\n❌ 修复失败: {error}")
+        print(f"\nFix failed: {error}")
         return None
 
     if not fixed_code:
-        print("\n❌ 修复返回空内容")
+        print("\nFix returned empty content")
         return None
 
     version = _get_next_version()
     strategy_path = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
     strategy_path.write_text(fixed_code, encoding="utf-8")
 
-    print(f"\n✅ 修复代码已保存: strategy_pool/strategy_v{version}.py")
+    print(f"\nFixed code saved: strategy_pool/strategy_v{version}.py")
     return str(strategy_path)
 
 
@@ -454,7 +536,7 @@ def step_fix_code(cfg) -> Optional[str]:
 # ============================================================
 
 def _get_next_version() -> int:
-    """获取下一个策略版本号"""
+    """Get next strategy version number"""
     pool_dir = PROJECT_ROOT / "strategy_pool"
     existing = list(pool_dir.glob("strategy_v*.py"))
     if not existing:
@@ -472,7 +554,7 @@ def _get_next_version() -> int:
 
 
 def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
-    """运行单个策略回测"""
+    """Run single strategy backtest"""
     import pandas as pd
     from data.fetcher import DataFetcher
     from engine.sandbox import execute_strategy, format_error_for_llm
@@ -480,9 +562,8 @@ def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
     from engine.analyzer import compute_metrics, save_metrics_json, format_metrics_report
     from llm.deepseek_client import create_client_from_config
 
-    print(f"\n🔬 回测: {strategy_path.name}")
+    print(f"\nBacktesting: {strategy_path.name}")
 
-    # 获取数据
     if fetcher is None:
         fetcher = DataFetcher(cache_dir=cfg.DATA_CACHE_DIR)
 
@@ -492,55 +573,43 @@ def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
         universe=cfg.STOCK_POOL,
     )
 
-    # 沙箱执行策略
-    print("   📦 沙箱执行策略...")
+    print("   Executing strategy in sandbox...")
     signals, error = execute_strategy(strategy_path, data)
 
     if error:
-        print(f"\n❌ 策略执行失败:")
+        print(f"\nStrategy execution failed:")
         print(f"   {error}")
 
-        # 自动尝试修复
-        fix = input("\n🔧 是否让 AI 自动修复？[Y/n]: ").strip().lower()
+        fix = input("\nAuto-fix with AI? [Y/n]: ").strip().lower()
         if fix in ("", "y", "yes"):
             code = strategy_path.read_text(encoding="utf-8")
-            fix_prompt = format_error_for_llm(error, code)
-
             try:
                 client = create_client_from_config()
-                fixed_code, fix_error = client.fix_code(
-                    error_message=error,
-                    strategy_code=code,
-                )
-
+                fixed_code, fix_error = client.fix_code(error_message=error, strategy_code=code)
                 if fixed_code and not fix_error:
                     version = _get_next_version()
                     new_path = PROJECT_ROOT / "strategy_pool" / f"strategy_v{version}.py"
                     new_path.write_text(fixed_code, encoding="utf-8")
-                    print(f"   ✅ 修复代码已保存: {new_path.name}")
-                    print(f"   💡 请重新运行 Step 3 测试修复后的策略。")
+                    print(f"   Fixed code saved: {new_path.name}")
+                    print(f"   Tip: Re-run Step 3 to test the fixed strategy.")
                 else:
-                    print(f"   ❌ AI 修复失败: {fix_error}")
+                    print(f"   AI fix failed: {fix_error}")
             except Exception as e:
-                print(f"   ❌ 无法连接 LLM: {e}")
-
+                print(f"   Cannot connect to LLM: {e}")
         return None
 
-    # 运行回测
-    print("   📊 执行 VectorBT 回测...")
+    print("   Running VectorBT backtest...")
     result = run_backtest_simple(
-        data=data,
-        signals=signals,
+        data=data, signals=signals,
         initial_capital=cfg.INITIAL_CAPITAL,
         commission=cfg.COMMISSION,
         slippage=cfg.SLIPPAGE,
     )
 
     if "error" in result and result["error"]:
-        print(f"   ❌ 回测失败: {result['error']}")
+        print(f"   Backtest failed: {result['error']}")
         return None
 
-    # 获取基准收益
     benchmark_returns = None
     try:
         benchmark = fetcher.fetch_benchmark(
@@ -552,18 +621,15 @@ def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
     except Exception:
         pass
 
-    # 计算指标
     equity = result.get("equity_curve", pd.Series(dtype=float))
     trades = result.get("trades")
 
     metrics = compute_metrics(
-        equity_curve=equity,
-        trades=trades,
+        equity_curve=equity, trades=trades,
         risk_free_rate=cfg.RISK_FREE_RATE,
         benchmark_returns=benchmark_returns,
     )
 
-    # 读取策略元信息
     from engine.sandbox import load_strategy_from_file
     strategy, _ = load_strategy_from_file(strategy_path)
     if strategy and hasattr(strategy, "get_info"):
@@ -574,19 +640,16 @@ def _run_single_backtest(cfg, fetcher, strategy_path) -> Optional[Dict]:
         metrics["strategy_name"] = strategy_path.stem
         metrics["version"] = _get_version_from_path(strategy_path)
 
-    # 保存结果
     result_path = PROJECT_ROOT / "results" / f"{strategy_path.stem}.json"
     save_metrics_json(metrics, str(result_path))
 
-    # 显示报告
     print(format_metrics_report(metrics, metrics["strategy_name"]))
-
     return metrics
 
 
 def _run_all_backtests(cfg, fetcher, strategies) -> Optional[Dict]:
-    """批量运行所有策略"""
-    print(f"\n📊 批量回测 {len(strategies)} 个策略...")
+    """Batch run all strategies"""
+    print(f"\nBatch backtesting {len(strategies)} strategies...")
 
     all_metrics = []
     for sp in strategies:
@@ -596,9 +659,9 @@ def _run_all_backtests(cfg, fetcher, strategies) -> Optional[Dict]:
 
     if all_metrics:
         print("\n" + "=" * 70)
-        print("  📊 批量回测汇总")
+        print("  Batch Summary")
         print("=" * 70)
-        print(f"{'策略':30s} {'总收益':>8s} {'夏普':>6s} {'回撤':>8s}")
+        print(f"{'Strategy':30s} {'TotRet':>8s} {'Sharpe':>6s} {'MaxDD':>8s}")
         print("-" * 70)
         best_sharpe = -999
         best_name = ""
@@ -612,13 +675,13 @@ def _run_all_backtests(cfg, fetcher, strategies) -> Optional[Dict]:
                 best_sharpe = sr
                 best_name = name
         print("-" * 70)
-        print(f"\n🏆 最佳策略: {best_name} (夏普: {best_sharpe:.2f})")
+        print(f"\nBest strategy: {best_name} (Sharpe: {best_sharpe:.2f})")
 
     return all_metrics[-1] if all_metrics else None
 
 
 def _get_version_from_path(path) -> int:
-    """从文件路径提取版本号"""
+    """Extract version number from file path"""
     try:
         return int(path.stem.replace("strategy_v", ""))
     except ValueError:
@@ -630,47 +693,49 @@ def _get_version_from_path(path) -> int:
 # ============================================================
 
 def show_menu():
-    """显示主菜单"""
+    """Display main menu"""
     print("""
-╔══════════════════════════════════════════════════╗
-║         🧬 Quant Evolution — Phase 1             ║
-║           量化 AI 进化系统 · 人工闭环             ║
-╠══════════════════════════════════════════════════╣
-║                                                  ║
-║  1. 📊 下载/更新 A股数据                          ║
-║  2. 🧠 用 DeepSeek 生成初始策略                   ║
-║  3. 🔬 运行回测                                   ║
-║  4. 📈 查看绩效报告                               ║
-║  5. 🔄 将回测结果反馈给 AI 改进策略                ║
-║  6. 📋 查看策略进化历史                           ║
-║  7. 🔧 手动修复策略报错                           ║
-║  0. 👋 退出                                       ║
-║                                                  ║
-╚══════════════════════════════════════════════════╝
++====================================================+
+|         Quant Evolution -- Phase 1                 |
+|        AI Quantitative Evolution System            |
++====================================================+
+|                                                    |
+|  1. Download/Update A-share data                   |
+|  2. DeepSeek generate initial strategy             |
+|  3. Run backtest                                   |
+|  4. View performance report                        |
+|  5. Feedback results to AI for improvement         |
+|  6. View evolution history                         |
+|  7. Manually fix strategy errors (AI)              |
+|  8. Delete strategies                              |
+|  0. Exit                                           |
+|                                                    |
++====================================================+
 """)
 
 
 def main():
-    """主入口"""
+    """Main entry"""
     os.chdir(PROJECT_ROOT)
     ensure_directories()
 
     args = parse_args()
 
-    print(f"\n🚀 启动 Quant Evolution 系统...")
-    print(f"   项目路径: {PROJECT_ROOT}")
+    print(f"\nQuant Evolution System Starting...")
+    print(f"   Project path: {PROJECT_ROOT}")
 
     try:
         cfg = load_config()
-        print(f"   数据区间: {cfg.DATA_START_DATE} → {cfg.DATA_END_DATE}")
-        print(f"   股票池: {cfg.STOCK_POOL}")
-        print(f"   初始资金: {cfg.INITIAL_CAPITAL:,.0f} 元")
+        print(f"   Date range: {cfg.DATA_START_DATE} -> {cfg.DATA_END_DATE}")
+        print(f"   Stock pool: {cfg.STOCK_POOL}")
+        print(f"   Initial capital: {cfg.INITIAL_CAPITAL:,.0f}")
     except Exception as e:
-        print(f"   ⚠️ 配置加载警告: {e}")
+        print(f"   Config load warning: {e}")
         return
 
     fetcher = None
 
+    # CLI mode
     if args.all:
         for step in range(1, 7):
             if step == 1:
@@ -688,28 +753,24 @@ def main():
         return
 
     if args.step is not None:
-        if args.step == 1:
-            step_fetch_data(cfg)
-        elif args.step == 2:
-            step_generate_strategy(cfg)
-        elif args.step == 3:
-            step_run_backtest(cfg, fetcher, strategy_choice=args.strategy)
-        elif args.step == 4:
-            step_show_report(cfg)
-        elif args.step == 5:
-            step_evolve(cfg)
-        elif args.step == 6:
-            step_show_history(cfg)
-        elif args.step == 7:
-            step_fix_code(cfg)
+        mapping = {1: step_fetch_data, 2: step_generate_strategy, 3: step_run_backtest,
+                   4: step_show_report, 5: step_evolve, 6: step_show_history,
+                   7: step_fix_code, 8: step_delete_strategy}
+        func = mapping.get(args.step)
+        if func:
+            if args.step == 3:
+                func(cfg, fetcher, strategy_choice=args.strategy)
+            else:
+                func(cfg)
         return
 
+    # Interactive mode
     while True:
         show_menu()
-        choice = input("📝 请选择 [0-7] > ").strip()
+        choice = input("Select [0-8] > ").strip()
 
         if choice == "0":
-            print("\n👋 再见！记住：量化之路，贵在坚持。")
+            print("\nGoodbye!")
             break
         elif choice == "1":
             fetcher = step_fetch_data(cfg)
@@ -725,11 +786,13 @@ def main():
             step_show_history(cfg)
         elif choice == "7":
             step_fix_code(cfg)
+        elif choice == "8":
+            step_delete_strategy(cfg)
         else:
-            print("❌ 无效选择，请输入 0-7")
+            print("Invalid selection, please enter 0-8")
 
         if choice != "0":
-            input("\n⏎ 按回车键继续...")
+            input("\nPress Enter to continue...")
 
 
 if __name__ == "__main__":
