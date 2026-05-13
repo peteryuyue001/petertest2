@@ -16,17 +16,28 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 def load_config():
-    """加载全局配置"""
+    """加载全局配置（优先级：config.py > config_env.py > config.example.py）"""
+    # 1. 本地开发：config.py
     try:
         import config
         return config
     except ImportError:
-        import importlib.util
-        example_path = PROJECT_ROOT / "config.example.py"
-        spec = importlib.util.spec_from_file_location("config_example", str(example_path))
-        config_example = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(config_example)
-        return config_example
+        pass
+
+    # 2. 云端部署：config_env.py（从环境变量读取）
+    try:
+        import config_env
+        return config_env
+    except ImportError:
+        pass
+
+    # 3. 兜底：config.example.py
+    import importlib.util
+    example_path = PROJECT_ROOT / "config.example.py"
+    spec = importlib.util.spec_from_file_location("config_example", str(example_path))
+    config_example = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(config_example)
+    return config_example
 
 
 def get_strategies() -> List[Dict]:
