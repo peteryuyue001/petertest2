@@ -1,0 +1,18 @@
+{
+  "total_return": 0.038066,
+  "annual_return": 0.00625,
+  "annual_volatility": 0.00926,
+  "max_drawdown": -0.017105,
+  "sharpe_ratio": -1.4781,
+  "calmar_ratio": 0.3654,
+  "benchmark_return": 0.115046,
+  "excess_return": -0.236425,
+  "information_ratio": -0.1644,
+  "win_rate": 0.7039,
+  "profit_factor": 3.5961,
+  "total_trades": 699,
+  "total_days": 1455,
+  "years": 6.0,
+  "strategy_name": "A股多因子选股策略",
+  "version": 1
+}

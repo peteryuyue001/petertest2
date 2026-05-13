@@ -1,0 +1,18 @@
+{
+  "total_return": 0.024479,
+  "annual_return": 0.004042,
+  "annual_volatility": 0.005751,
+  "max_drawdown": -0.008271,
+  "sharpe_ratio": -2.7689,
+  "calmar_ratio": 0.4887,
+  "benchmark_return": 0.115046,
+  "excess_return": -0.248795,
+  "information_ratio": -0.1742,
+  "win_rate": 0.7238,
+  "profit_factor": 2.7832,
+  "total_trades": 1086,
+  "total_days": 1455,
+  "years": 6.0,
+  "strategy_name": "沪深300多因子选股策略-v2",
+  "version": 2
+}

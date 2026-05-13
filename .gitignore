@@ -31,6 +31,7 @@ build/
 
 # 虚拟环境
 .venv/
+**/.venv/
 venv/
 env/
 .env.local

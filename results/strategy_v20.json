@@ -1,0 +1,18 @@
+{
+  "total_return": 0.033556,
+  "annual_return": 0.00552,
+  "annual_volatility": 0.008752,
+  "max_drawdown": -0.015474,
+  "sharpe_ratio": -1.648,
+  "calmar_ratio": 0.3567,
+  "benchmark_return": 0.115046,
+  "excess_return": -0.240163,
+  "information_ratio": -0.1681,
+  "win_rate": 0.7173,
+  "profit_factor": 2.6609,
+  "total_trades": 704,
+  "total_days": 1455,
+  "years": 6.0,
+  "strategy_name": "净化多因子选股策略",
+  "version": 1
+}

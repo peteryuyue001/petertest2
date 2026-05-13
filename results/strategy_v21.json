@@ -1,0 +1,18 @@
+{
+  "total_return": 0.034615,
+  "annual_return": 0.005692,
+  "annual_volatility": 0.01094,
+  "max_drawdown": -0.020595,
+  "sharpe_ratio": -1.3006,
+  "calmar_ratio": 0.2764,
+  "benchmark_return": 0.115046,
+  "excess_return": -0.237926,
+  "information_ratio": -0.1686,
+  "win_rate": 0.7338,
+  "profit_factor": 2.1047,
+  "total_trades": 526,
+  "total_days": 1455,
+  "years": 6.0,
+  "strategy_name": "多因子复合选股策略v20",
+  "version": 20
+}
